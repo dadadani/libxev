@@ -27,6 +27,12 @@ pub fn available() bool {
     };
 }
 
+const NOTE_EXIT_FLAGS = switch (builtin.os.tag) {
+    .ios, .macos => posix.system.NOTE_EXIT | posix.system.NOTE_EXITSTATUS,
+    .freebsd => posix.system.NOTE_EXIT,
+    else => @compileError("kqueue not supported yet for target OS"),
+};
+
 pub const Loop = struct {
     const TimerHeap = heap.Intrusive(Timer, void, Timer.less);
     const TaskCompletionQueue = queue_mpsc.Intrusive(Completion);
@@ -38,8 +44,8 @@ pub const Loop = struct {
     /// an empty message to this port can be used to wake up the loop
     /// at any time. Waking up the loop via this port won't trigger any
     /// particular completion, it just forces tick to cycle.
-    mach_port: xev.Async,
-    mach_port_buffer: [32]u8 = undefined,
+    //mach_port: xev.Async,
+    //mach_port_buffer: [32]u8 = undefined,
 
     /// The number of active completions. This DOES NOT include completions that
     /// are queued in the submissions queue.
@@ -99,7 +105,7 @@ pub const Loop = struct {
 
         var res: Loop = .{
             .kqueue_fd = fd,
-            .mach_port = mach_port,
+            // .mach_port = mach_port,
             .thread_pool = options.thread_pool,
             .thread_pool_completions = undefined,
             .cached_now = undefined,
@@ -350,30 +356,30 @@ pub const Loop = struct {
 
             // Add our event so that we wake up when our mach port receives an
             // event. We have to add here because we need a stable self pointer.
-            const events = [_]Kevent{.{
-                .ident = @as(usize, @intCast(self.mach_port.port)),
-                .filter = posix.system.EVFILT.MACHPORT,
-                .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
-                .fflags = darwin.MACH_RCV_MSG,
-                .data = 0,
-                .udata = 0,
-                .ext = .{
-                    @intFromPtr(&self.mach_port_buffer),
-                    self.mach_port_buffer.len,
-                },
-            }};
-            const n = kevent_syscall(
-                self.kqueue_fd,
-                &events,
-                events[0..0],
-                null,
-            ) catch |err| {
-                // We reset initialization because we can't do anything
-                // safely unless we get this mach port registered!
-                self.flags.init = false;
-                return err;
-            };
-            assert(n == 0);
+            //const events = [_]Kevent{.{
+            //    .ident = @as(usize, @intCast(self.mach_port.port)),
+            //    .filter = posix.system.EVFILT.MACHPORT,
+            //    .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
+            //    .fflags = darwin.MACH_RCV_MSG,
+            //    .data = 0,
+            //    .udata = 0,
+            //    .ext = .{
+            //        @intFromPtr(&self.mach_port_buffer),
+            //        self.mach_port_buffer.len,
+            //    },
+            //}};
+            //const n = kevent_syscall(
+            //    self.kqueue_fd,
+            //    &events,
+            //    events[0..0],
+            //    null,
+            //) catch |err| {
+            //    // We reset initialization because we can't do anything
+            //    // safely unless we get this mach port registered!
+            //    self.flags.init = false;
+            //    return err;
+            //};
+            //assert(n == 0);
         }
 
         // The list of events, used as both a changelist and eventlist.
@@ -848,10 +854,10 @@ pub const Loop = struct {
                 break :action .{ .kevent = {} };
             },
 
-            .machport => action: {
-                ev.* = c.kevent().?;
-                break :action .{ .kevent = {} };
-            },
+            // .machport => action: {
+            //     ev.* = c.kevent().?;
+            //     break :action .{ .kevent = {} };
+            // },
 
             .proc => action: {
                 ev.* = c.kevent().?;
@@ -1021,7 +1027,7 @@ pub const Loop = struct {
     /// Sends an empty message to this loop's mach port so that it wakes
     /// up if it is blocking on kevent().
     fn wakeup(self: *Loop) !void {
-        try self.mach_port.notify();
+        //try self.mach_port.notify();
     }
 };
 
@@ -1132,27 +1138,27 @@ pub const Completion = struct {
                 .udata = @intFromPtr(self),
             }),
 
-            .machport => kevent: {
-                // We can't use |*v| above because it crahses the Zig
-                // compiler (as of 0.11.0-dev.1413). We can retry another time.
-                const v = &self.op.machport;
-                const slice: []u8 = switch (v.buffer) {
-                    .slice => |slice| slice,
-                    .array => |*arr| arr,
-                };
+            // .machport => kevent: {
+            //     // We can't use |*v| above because it crahses the Zig
+            //     // compiler (as of 0.11.0-dev.1413). We can retry another time.
+            //     const v = &self.op.machport;
+            //     const slice: []u8 = switch (v.buffer) {
+            //         .slice => |slice| slice,
+            //         .array => |*arr| arr,
+            //     };
 
                 // The kevent below waits for a machport to have a message
                 // available AND automatically reads the message into the
                 // buffer since MACH_RCV_MSG is set.
-                break :kevent .{
-                    .ident = @intCast(v.port),
-                    .filter = posix.system.EVFILT.MACHPORT,
-                    .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
-                    .fflags = darwin.MACH_RCV_MSG,
-                    .data = 0,
-                    .udata = @intFromPtr(self),
-                    .ext = .{ @intFromPtr(slice.ptr), slice.len },
-                };
+                //break :kevent .{
+                //    .ident = @intCast(v.port),
+                //    .filter = posix.system.EVFILT.MACHPORT,
+                //    .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
+                //    .fflags = darwin.MACH_RCV_MSG,
+                //    .data = 0,
+                //    .udata = @intFromPtr(self),
+                //    .ext = .{ @intFromPtr(slice.ptr), slice.len },
+                //};
             },
 
             .proc => |v| kevent_init(.{
@@ -1316,16 +1322,16 @@ pub const Completion = struct {
             // Our machport operation ALWAYS has MACH_RCV set so there
             // is no operation to perform. kqueue automatically reads in
             // the mach message into the read buffer.
-            .machport => .{
-                .machport = {},
-            },
+            // .machport => .{
+            //     .machport = {},
+            // },
 
             // For proc watching, it is identical to the syscall result.
             .proc => res: {
                 const ev = ev_ orelse break :res .{ .proc = ProcError.MissingKevent };
 
                 // If we have the exit status, we read it.
-                if (ev.fflags & (posix.system.NOTE.EXIT | posix.system.NOTE.EXITSTATUS) > 0) {
+                if (ev.fflags & NOTE_EXIT_FLAGS > 0) {
                     const data: u32 = @intCast(ev.data);
                     if (posix.W.IFEXITED(data)) break :res .{
                         .proc = posix.W.EXITSTATUS(data),
@@ -1432,13 +1438,13 @@ pub const Completion = struct {
                 },
             },
 
-            .machport => .{
-                .machport = switch (errno) {
-                    .SUCCESS => {},
-                    .CANCELED => error.Canceled,
-                    else => |err| posix.unexpectedErrno(err),
-                },
-            },
+            // .machport => .{
+            //     .machport = switch (errno) {
+            //         .SUCCESS => {},
+            //         .CANCELED => error.Canceled,
+            //         else => |err| posix.unexpectedErrno(err),
+            //     },
+            // },
 
             .proc => .{
                 .proc = switch (errno) {
@@ -1508,7 +1514,7 @@ pub const OperationType = enum {
     shutdown,
     timer,
     cancel,
-    machport,
+    // machport,
     proc,
 };
 
@@ -1594,14 +1600,14 @@ pub const Operation = union(OperationType) {
         c: *Completion,
     },
 
-    machport: struct {
-        port: posix.system.mach_port_name_t,
-        buffer: ReadBuffer,
-    },
+    // machport: struct {
+    //     port: posix.system.mach_port_name_t,
+    //     buffer: ReadBuffer,
+    // },
 
     proc: struct {
         pid: posix.pid_t,
-        flags: u32 = posix.system.NOTE.EXIT | posix.system.NOTE.EXITSTATUS,
+        flags: u32 = NOTE_EXIT_FLAGS,
     },
 };
 
@@ -1621,7 +1627,7 @@ pub const Result = union(OperationType) {
     shutdown: ShutdownError!void,
     timer: TimerError!TimerTrigger,
     cancel: CancelError!void,
-    machport: MachPortError!void,
+    // machport: MachPortError!void,
     proc: ProcError!u32,
 };
 
@@ -1669,10 +1675,10 @@ pub const WriteError = posix.KEventError ||
         Unexpected,
     };
 
-pub const MachPortError = posix.KEventError || error{
-    Canceled,
-    Unexpected,
-};
+// pub const MachPortError = posix.KEventError || error{
+//     Canceled,
+//     Unexpected,
+// };
 
 pub const ProcError = posix.KEventError || error{
     Canceled,
@@ -1792,8 +1798,9 @@ const Timer = struct {
 
 /// Zig provides posix.system.Kevent which supports both Darwin and BSD kqueue
 const Kevent = switch (builtin.os.tag) {
-    .ios, .macos => @typeInfo(@typeInfo(@TypeOf(std.c.kevent64)).@"fn".params[1].type.?).pointer.child, // "Hack" to access kevent64_s, which is currently not published. Also see https://github.com/ziglang/zig/issues/21200
-    else => @compileError("kqueue not supported yet for target OS"), // TODO: Support BSD-like kqueue
+    .ios, .macos => posix.system.kevent64_s,
+    .freebsd => std.c.Kevent,
+    else => @compileError("kqueue not supported yet for target OS"),
 };
 
 /// kevent calls either kevent or kevent64 depending on the
@@ -2475,6 +2482,7 @@ test "kqueue: socket accept/connect/send/recv/close" {
 }
 
 test "kqueue: file IO on thread pool" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
     const testing = std.testing;
 
     var tpool = main.ThreadPool.init(std.Thread.getCpuCount() catch 1);
