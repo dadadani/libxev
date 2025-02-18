@@ -1360,7 +1360,7 @@ test "Completion size" {
     const testing = std.testing;
 
     // Just so we are aware when we change the size
-    try testing.expectEqual(@as(usize, 208), @sizeOf(Completion));
+    try testing.expectEqual(@as(usize, 200), @sizeOf(Completion));
 }
 
 test "epoll: default completion" {

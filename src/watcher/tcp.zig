@@ -4,7 +4,6 @@ const assert = std.debug.assert;
 const posix = std.posix;
 const stream = @import("stream.zig");
 const common = @import("common.zig");
-const ThreadPool = @import("../ThreadPool.zig");
 
 /// TCP client and server.
 ///
@@ -234,8 +233,8 @@ pub fn TCP(comptime xev: type) type {
             if (xev.backend == .wasi_poll) return error.SkipZigTest;
 
             const testing = std.testing;
-            var thr = ThreadPool.init(.{});
-            var loop = try xev.Loop.init(.{ .thread_pool = @ptrCast(&thr) });
+
+            var loop = try xev.Loop.init(.{});
             defer loop.deinit();
 
             // Choose random available port (Zig #14907)
