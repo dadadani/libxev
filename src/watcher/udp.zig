@@ -538,12 +538,13 @@ fn UDPSendMsg(comptime xev: type) type {
                         r: xev.Result,
                     ) xev.CallbackAction {
                         const s_inner = @as(?*State, @ptrCast(@alignCast(ud))).?;
+                        const addr = if (r.recvmsg) |_| std.net.Address.initPosix(@ptrCast(&s_inner.op.recv.addr_buffer)) else |_| std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 0);
                         return @call(.always_inline, cb, .{
                             common.userdataValue(Userdata, s_inner.userdata),
                             l_inner,
                             c_inner,
                             s_inner,
-                            std.net.Address.initPosix(@ptrCast(&s_inner.op.recv.addr_buffer)),
+                            addr,
                             initFd(c_inner.op.recvmsg.fd),
                             s_inner.op.recv.buf,
                             if (r.recvmsg) |v| v else |err| err,
