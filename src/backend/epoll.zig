@@ -851,12 +851,40 @@ pub const Loop = struct {
             else => unreachable,
         }
 
+        defer if (completion.flags.state != .dead) {
+            // Mark the completion as done
+            completion.flags.state = .dead;
+
+            const close_dup = completion.flags.dup;
+            switch (completion.op) {
+                .noop, .cancel, .timer => {},
+                inline else => |_, op| {
+                    const action = completion.callback(
+                        completion.userdata,
+                        self,
+                        completion,
+                        @unionInit(Result, @tagName(op), error.Canceled),
+                    );
+                    switch (action) {
+                        .disarm => {
+                            if (maybe_fd) |fd| {
+                                if (close_dup) {
+                                    posix.close(fd);
+                                }
+                            }
+                        },
+                        .rearm => {
+                            self.active -= 1;
+                            self.start(completion);
+                        },
+                    }
+                },
+            }
+        };
+
         // Decrement the active count so we know how many are running for
         // .until_done run semantics.
         if (completion.flags.state == .active) self.active -= 1;
-
-        // Mark the completion as done
-        completion.flags.state = .dead;
     }
 };
 
@@ -1311,24 +1339,29 @@ pub const CancelError = ThreadPoolError || error{
 };
 
 pub const AcceptError = posix.EpollCtlError || error{
+    Canceled,
     DupFailed,
     Unknown,
 };
 
 pub const CloseError = posix.EpollCtlError || ThreadPoolError || error{
+    Canceled,
     Unknown,
 };
 
 pub const PollError = posix.EpollCtlError || error{
+    Canceled,
     DupFailed,
     Unknown,
 };
 
 pub const ShutdownError = posix.EpollCtlError || posix.ShutdownError || error{
+    Canceled,
     Unknown,
 };
 
 pub const ConnectError = posix.EpollCtlError || posix.ConnectError || error{
+    Canceled,
     DupFailed,
     Unknown,
 };
@@ -1338,6 +1371,7 @@ pub const ReadError = ThreadPoolError || posix.EpollCtlError ||
     posix.PReadError ||
     posix.RecvFromError ||
     error{
+    Canceled,
     DupFailed,
     EOF,
     Unknown,
@@ -1349,6 +1383,7 @@ pub const WriteError = ThreadPoolError || posix.EpollCtlError ||
     posix.SendError ||
     posix.SendMsgError ||
     error{
+    Canceled,
     DupFailed,
     Unknown,
 };
