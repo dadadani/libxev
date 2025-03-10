@@ -30,9 +30,10 @@ jobs:
         fetch-depth: 0
         
     - name: Install zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: mlugg/setup-zig@v1
       with:
-        version: master
+        version: 0.14.0
+        use-cache: false
         
     - name: Setup `wasmtime`
       uses: bytecodealliance/actions/wasmtime/setup@v1
@@ -54,9 +55,10 @@ jobs:
         fetch-depth: 0
 
     - name: Install zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: mlugg/setup-zig@v1
       with:
-        version: master
+        version: 0.14.0
+        use-cache: false
 
     - name: test
       run: zig build test --summary all
@@ -86,9 +88,10 @@ jobs:
         fetch-depth: 0
 
     - name: Install zig
-      uses: goto-bus-stop/setup-zig@v2
+      uses: mlugg/setup-zig@v1
       with:
-        version: master
+        version: 0.14.0
+        use-cache: false
 
     - name: test
       run: zig build test --summary all
