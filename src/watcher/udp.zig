@@ -1003,7 +1003,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
             var loop = try xev.Loop.init(.{ .thread_pool = &tpool });
             defer loop.deinit();
 
-            const address = try std.net.Address.parseIp4("127.0.0.1", 3132);
+            const address = try std.net.Address.parseIp4("127.0.0.1", 3133);
             const server = try Impl.init(address);
             const client = try Impl.init(address);
 
@@ -1073,6 +1073,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
             while (written == 0 or recv_len == 0) {
                 try loop.run(.no_wait);
             }
+            try testing.expect(written > 0);
             try testing.expect(recv_len > 0);
             try testing.expectEqualSlices(u8, &send_buf, recv_buf[0..recv_len]);
 
