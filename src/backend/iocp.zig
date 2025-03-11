@@ -526,7 +526,7 @@ pub const Loop = struct {
                 if (result != windows.TRUE) {
                     const err = windows.ws2_32.WSAGetLastError();
                     switch (err) {
-                        windows.ws2_32.WinsockError.WSA_IO_PENDING => break :action .{ .submitted = {} },
+                        .WSA_IO_PENDING => break :action .{ .submitted = {} },
                         else => {
                             windows.CloseHandle(v.internal_accept_socket.?);
                             break :action .{ .result = .{ .accept = windows.unexpectedWSAError(err) } };
@@ -624,7 +624,7 @@ pub const Loop = struct {
                 if (result != 0) {
                     const err = windows.ws2_32.WSAGetLastError();
                     break :action switch (err) {
-                        windows.ws2_32.WinsockError.WSA_IO_PENDING => .{ .submitted = {} },
+                        .WSA_IO_PENDING => .{ .submitted = {} },
                         .WSA_OPERATION_ABORTED, .WSAECONNABORTED => .{ .result = .{ .send = error.Canceled } },
                         .WSAECONNRESET, .WSAENETRESET => .{ .result = .{ .send = error.ConnectionReset } },
                         else => .{ .result = .{ .send = windows.unexpectedWSAError(err) } },
@@ -652,7 +652,7 @@ pub const Loop = struct {
                 if (result != 0) {
                     const err = windows.ws2_32.WSAGetLastError();
                     break :action switch (err) {
-                        windows.ws2_32.WinsockError.WSA_IO_PENDING => .{ .submitted = {} },
+                        .WSA_IO_PENDING => .{ .submitted = {} },
                         .WSA_OPERATION_ABORTED, .WSAECONNABORTED => .{ .result = .{ .recv = error.Canceled } },
                         .WSAECONNRESET, .WSAENETRESET => .{ .result = .{ .recv = error.ConnectionReset } },
                         else => .{ .result = .{ .recv = windows.unexpectedWSAError(err) } },
@@ -679,7 +679,7 @@ pub const Loop = struct {
                 if (result != 0) {
                     const err = windows.ws2_32.WSAGetLastError();
                     break :action switch (err) {
-                        windows.ws2_32.WinsockError.WSA_IO_PENDING => .{ .submitted = {} },
+                        .WSA_IO_PENDING => .{ .submitted = {} },
                         .WSA_OPERATION_ABORTED, .WSAECONNABORTED => .{ .result = .{ .sendto = error.Canceled } },
                         .WSAECONNRESET, .WSAENETRESET => .{ .result = .{ .sendto = error.ConnectionReset } },
                         else => .{ .result = .{ .sendto = windows.unexpectedWSAError(err) } },
@@ -709,7 +709,7 @@ pub const Loop = struct {
                 if (result != 0) {
                     const err = windows.ws2_32.WSAGetLastError();
                     break :action switch (err) {
-                        windows.ws2_32.WinsockError.WSA_IO_PENDING => .{ .submitted = {} },
+                        .WSA_IO_PENDING => .{ .submitted = {} },
                         .WSA_OPERATION_ABORTED, .WSAECONNABORTED => .{ .result = .{ .recvfrom = error.Canceled } },
                         .WSAECONNRESET, .WSAENETRESET => .{ .result = .{ .recvfrom = error.ConnectionReset } },
                         else => .{ .result = .{ .recvfrom = windows.unexpectedWSAError(err) } },

@@ -1003,12 +1003,14 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
             var loop = try xev.Loop.init(.{ .thread_pool = &tpool });
             defer loop.deinit();
 
-            const address = try std.net.Address.parseIp4("127.0.0.1", 3133);
+            const address = try std.net.Address.parseIp4("127.0.0.1", 3132);
+            const address2 = try std.net.Address.parseIp4("127.0.0.1", 3133);
             const server = try Impl.init(address);
             const client = try Impl.init(address);
 
             // Bind / Recv
             try server.bind(address);
+            try client.bind(address2);
             var c_read: xev.Completion = undefined;
             var s_read: Impl.State = undefined;
             var recv_buf: [128]u8 = undefined;
