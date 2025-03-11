@@ -303,10 +303,12 @@ pub const Loop = struct {
             }
 
             // If we have processed enough event, we break out of the loop.
-            if (wait_rem == 0) break;
+            if (self.active == 0) break;
 
             // Determine our next timeout based on the timers.
             const timeout: ?windows.DWORD = timeout: {
+                if (wait == 0)
+                    break :timeout 0;
                 // If we have a timer, we want to set the timeout to our next timer value. If we
                 // have no timer, we wait forever.
                 const t = self.timers.peek() orelse break :timeout null;
@@ -318,7 +320,6 @@ pub const Loop = struct {
                 const ms = ms_next -| ms_now;
                 break :timeout std.math.cast(windows.DWORD, ms) orelse windows.INFINITE - 1;
             };
-
             // Wait for changes IO completions.
             const count: u32 = windows.GetQueuedCompletionStatusEx(self.iocp_handle, &entries, timeout, false) catch |err| switch (err) {
                 // A timeout means that nothing was completed.
@@ -329,6 +330,7 @@ pub const Loop = struct {
 
             // Go through the entries and perform completions callbacks.
             for (entries[0..count]) |entry| {
+                if (self.active == 0) break;
                 const completion: *Completion = if (entry.lpCompletionKey == 0) completion: {
                     // We retrieve the Completion from the OVERLAPPED pointer as we know it's a part of
                     // the Completion struct.
@@ -975,7 +977,11 @@ pub const Completion = struct {
                     const err = windows.ws2_32.WSAGetLastError();
                     const r: Result = .{
                         .accept = switch (err) {
-                            windows.ws2_32.WinsockError.WSA_OPERATION_ABORTED => error.Canceled,
+                            .WSA_OPERATION_ABORTED => error.Canceled,
+                            .WSAEFAULT => unreachable,
+                            .WSAEINVAL => unreachable,
+                            .WSAESHUTDOWN => unreachable,
+                            .WSANOTINITIALISED => unreachable,
                             else => windows.unexpectedWSAError(err),
                         },
                     };
@@ -992,7 +998,7 @@ pub const Completion = struct {
                 if (result == windows.FALSE) {
                     const err = windows.kernel32.GetLastError();
                     break :r .{ .read = switch (err) {
-                        windows.Win32Error.OPERATION_ABORTED => error.Canceled,
+                        .OPERATION_ABORTED => error.Canceled,
                         else => error.Unexpected,
                     } };
                 }
@@ -1005,7 +1011,7 @@ pub const Completion = struct {
                 if (result == windows.FALSE) {
                     const err = windows.kernel32.GetLastError();
                     break :r .{ .read = switch (err) {
-                        windows.Win32Error.OPERATION_ABORTED => error.Canceled,
+                        .OPERATION_ABORTED => error.Canceled,
                         else => error.Unexpected,
                     } };
                 }
@@ -1018,7 +1024,7 @@ pub const Completion = struct {
                 if (result == windows.FALSE) {
                     const err = windows.kernel32.GetLastError();
                     break :r .{ .write = switch (err) {
-                        windows.Win32Error.OPERATION_ABORTED => error.Canceled,
+                        .OPERATION_ABORTED => error.Canceled,
                         else => error.Unexpected,
                     } };
                 }
@@ -1031,7 +1037,7 @@ pub const Completion = struct {
                 if (result == windows.FALSE) {
                     const err = windows.kernel32.GetLastError();
                     break :r .{ .write = switch (err) {
-                        windows.Win32Error.OPERATION_ABORTED => error.Canceled,
+                        .OPERATION_ABORTED => error.Canceled,
                         else => error.Unexpected,
                     } };
                 }
@@ -1050,6 +1056,10 @@ pub const Completion = struct {
                         .send = switch (err) {
                             .WSA_OPERATION_ABORTED, .WSAECONNABORTED => error.Canceled,
                             .WSAECONNRESET, .WSAENETRESET => error.ConnectionReset,
+                            .WSAEFAULT => unreachable,
+                            .WSAEINVAL => unreachable,
+                            .WSAESHUTDOWN => unreachable,
+                            .WSANOTINITIALISED => unreachable,
                             else => windows.unexpectedWSAError(err),
                         },
                     };
@@ -1069,6 +1079,10 @@ pub const Completion = struct {
                         .recv = switch (err) {
                             .WSA_OPERATION_ABORTED, .WSAECONNABORTED => error.Canceled,
                             .WSAECONNRESET, .WSAENETRESET => error.ConnectionReset,
+                            .WSAEFAULT => unreachable,
+                            .WSAEINVAL => unreachable,
+                            .WSAESHUTDOWN => unreachable,
+                            .WSANOTINITIALISED => unreachable,
                             else => windows.unexpectedWSAError(err),
                         },
                     };
@@ -1104,6 +1118,10 @@ pub const Completion = struct {
                         .sendto = switch (err) {
                             .WSA_OPERATION_ABORTED, .WSAECONNABORTED => error.Canceled,
                             .WSAECONNRESET, .WSAENETRESET => error.ConnectionReset,
+                            .WSAEFAULT => unreachable,
+                            .WSAEINVAL => unreachable,
+                            .WSAESHUTDOWN => unreachable,
+                            .WSANOTINITIALISED => unreachable,
                             else => windows.unexpectedWSAError(err),
                         },
                     };
@@ -1123,6 +1141,10 @@ pub const Completion = struct {
                         .recvfrom = switch (err) {
                             .WSA_OPERATION_ABORTED, .WSAECONNABORTED => error.Canceled,
                             .WSAECONNRESET, .WSAENETRESET => error.ConnectionReset,
+                            .WSAEFAULT => unreachable,
+                            .WSAEINVAL => unreachable,
+                            .WSAESHUTDOWN => unreachable,
+                            .WSANOTINITIALISED => unreachable,
                             else => windows.unexpectedWSAError(err),
                         },
                     };
