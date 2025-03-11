@@ -141,6 +141,45 @@ pub const Loop = struct {
         self.submissions.push(completion);
     }
 
+    pub fn cancel(
+        self: *Loop,
+        c: *Completion,
+        c_cancel: *Completion,
+        comptime Userdata: type,
+        userdata: ?*Userdata,
+        comptime cb: *const fn (
+            ud: ?*Userdata,
+            l: *xev.Loop,
+            c: *xev.Completion,
+            r: CancelError!void,
+        ) xev.CallbackAction,
+    ) void {
+        c_cancel.* = .{
+            .op = .{
+                .cancel = .{
+                    .c = c,
+                },
+            },
+            .userdata = userdata,
+            .callback = (struct {
+                fn callback(
+                    ud: ?*anyopaque,
+                    l_inner: *xev.Loop,
+                    c_inner: *xev.Completion,
+                    r: xev.Result,
+                ) xev.CallbackAction {
+                    return @call(.always_inline, cb, .{
+                        @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(ud))),
+                        l_inner,
+                        c_inner,
+                        if (r.cancel) |_| {} else |err| err,
+                    });
+                }
+            }).callback,
+        };
+        self.add(c_cancel);
+    }
+
     /// Delete a completion from the loop.
     pub fn delete(self: *Loop, completion: *Completion) void {
         switch (completion.flags.state) {
@@ -524,7 +563,10 @@ pub const Loop = struct {
                 // means we're complete already.
                 if (completion.flags.state == .adding) {
                     if (v.c.op == .cancel) @panic("cannot cancel a cancellation");
-                    self.stop_completion(v.c);
+                    switch (v.c.flags.state) {
+                        .dead, .deleting => break :res .{ .cancel = CancelError.Inactive },
+                        else => self.stop_completion(v.c),
+                    }
                 }
 
                 // We always run timers
@@ -1336,6 +1378,7 @@ const ThreadPoolError = error{
 
 pub const CancelError = ThreadPoolError || error{
     NotFound,
+    Inactive,
 };
 
 pub const AcceptError = posix.EpollCtlError || error{
@@ -1371,11 +1414,11 @@ pub const ReadError = ThreadPoolError || posix.EpollCtlError ||
     posix.PReadError ||
     posix.RecvFromError ||
     error{
-    Canceled,
-    DupFailed,
-    EOF,
-    Unknown,
-};
+        Canceled,
+        DupFailed,
+        EOF,
+        Unknown,
+    };
 
 pub const WriteError = ThreadPoolError || posix.EpollCtlError ||
     posix.WriteError ||
@@ -1383,10 +1426,10 @@ pub const WriteError = ThreadPoolError || posix.EpollCtlError ||
     posix.SendError ||
     posix.SendMsgError ||
     error{
-    Canceled,
-    DupFailed,
-    Unknown,
-};
+        Canceled,
+        DupFailed,
+        Unknown,
+    };
 
 pub const TimerError = error{
     Unexpected,
@@ -2054,31 +2097,22 @@ test "epoll: canceling a completed operation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: xev.Completion = .{
-        .op = .{
-            .cancel = .{
-                .c = &c1,
-            },
-        },
-
-        .userdata = &called,
-        .callback = (struct {
-            fn callback(
-                ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
-                _ = l;
-                _ = c;
-                _ = r.cancel catch unreachable;
-                const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
-                ptr.* = true;
-                return .disarm;
-            }
-        }).callback,
-    };
-    loop.add(&c_cancel);
+    var c_cancel: xev.Completion = .{};
+    loop.cancel(&c1, &c_cancel, bool, &called, (struct {
+        fn callback(
+            ud: ?*bool,
+            l: *xev.Loop,
+            c: *xev.Completion,
+            r: xev.CancelError!void,
+        ) xev.CallbackAction {
+            _ = l;
+            _ = c;
+            testing.expectError(CancelError.Inactive, r) catch @panic("expected error");
+            const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
+            ptr.* = true;
+            return .disarm;
+        }
+    }).callback);
 
     // Tick
     try loop.run(.until_done);

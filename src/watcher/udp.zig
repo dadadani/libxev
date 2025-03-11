@@ -1080,7 +1080,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
             try testing.expectEqualSlices(u8, &send_buf, recv_buf[0..recv_len]);
 
             var cancel_completion: xev.Completion = undefined;
-            xev.cancel(&loop, &cancel_completion, &none_c_read, void, null, (struct {
+            loop.cancel(&none_c_read, &cancel_completion, void, null, (struct {
                 fn callback(
                     _: ?*void,
                     _: *xev.Loop,

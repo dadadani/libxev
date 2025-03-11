@@ -95,6 +95,60 @@ pub const Loop = struct {
         self.submissions.push(c);
     }
 
+    pub fn cancel(
+        self: *Loop,
+        c: *Completion,
+        c_cancel: *Completion,
+        comptime Userdata: type,
+        userdata: ?*Userdata,
+        comptime cb: *const fn (
+            ud: ?*Userdata,
+            l: *xev.Loop,
+            c: *xev.Completion,
+            r: CancelError!void,
+        ) xev.CallbackAction,
+    ) void {
+        c_cancel.* = .{
+            .op = .{
+                .cancel = .{
+                    .c = c,
+                },
+            },
+            .userdata = userdata,
+            .callback = (struct {
+                fn callback(
+                    ud: ?*anyopaque,
+                    l_inner: *xev.Loop,
+                    c_inner: *xev.Completion,
+                    r: xev.Result,
+                ) xev.CallbackAction {
+                    return @call(.always_inline, cb, .{
+                        @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(ud))),
+                        l_inner,
+                        c_inner,
+                        if (r.cancel) |_| {} else |err| err,
+                    });
+                }
+            }).callback,
+        };
+        switch (c.flags.state) {
+            .dead, .deleting => {
+                switch (cb(
+                    @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
+                    self,
+                    c_cancel,
+                    CancelError.Inactive,
+                )) {
+                    .disarm => {},
+                    .rearm => self.add(c_cancel),
+                }
+                return;
+            },
+            else => {},
+        }
+        self.add(c_cancel);
+    }
+
     fn done(self: *Loop) bool {
         return self.flags.stopped or (self.active == 0 and
             self.submissions.empty());
@@ -323,6 +377,7 @@ pub const Loop = struct {
                 // we're in the dead state it means we ran already.
                 if (completion.flags.state == .adding) {
                     if (v.c.op == .cancel) break :res .{ .cancel = CancelError.InvalidOp };
+                    if (v.c.flags.state == .dead) break :res .{ .cancel = CancelError.Inactive };
                     self.stop_completion(v.c);
                 }
 
@@ -1051,6 +1106,7 @@ const Timer = struct {
 pub const CancelError = error{
     /// Invalid operation to cancel. You cannot cancel a cancel operation.
     InvalidOp,
+    Inactive,
 };
 
 pub const CloseError = error{
@@ -1069,14 +1125,14 @@ pub const ShutdownError = error{
 
 pub const ReadError = Batch.Error || posix.ReadError || posix.PReadError ||
     error{
-    EOF,
-    Unknown,
-};
+        EOF,
+        Unknown,
+    };
 
 pub const WriteError = Batch.Error || posix.WriteError || posix.PWriteError ||
     error{
-    Unknown,
-};
+        Unknown,
+    };
 
 pub const AsyncError = error{
     Unknown,

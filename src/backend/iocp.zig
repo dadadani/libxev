@@ -131,6 +131,45 @@ pub const Loop = struct {
         self.submissions.push(completion);
     }
 
+    pub fn cancel(
+        self: *Loop,
+        c: *Completion,
+        c_cancel: *Completion,
+        comptime Userdata: type,
+        userdata: ?*Userdata,
+        comptime cb: *const fn (
+            ud: ?*Userdata,
+            l: *xev.Loop,
+            c: *xev.Completion,
+            r: CancelError!void,
+        ) xev.CallbackAction,
+    ) void {
+        c_cancel.* = .{
+            .op = .{
+                .cancel = .{
+                    .c = c,
+                },
+            },
+            .userdata = userdata,
+            .callback = (struct {
+                fn callback(
+                    ud: ?*anyopaque,
+                    l_inner: *xev.Loop,
+                    c_inner: *xev.Completion,
+                    r: xev.Result,
+                ) xev.CallbackAction {
+                    return @call(.always_inline, cb, .{
+                        @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(ud))),
+                        l_inner,
+                        c_inner,
+                        if (r.cancel) |_| {} else |err| err,
+                    });
+                }
+            }).callback,
+        };
+        self.add(c_cancel);
+    }
+
     /// Submit any enqueued completions. This does not fire any callbacks for completed events
     /// (success or error). Callbacks are only fired on the next tick.
     pub fn submit(self: *Loop) !void {
@@ -162,7 +201,7 @@ pub const Loop = struct {
             var cancel_result: CancelError!void = {};
             switch (target.flags.state) {
                 // If the target is dead already we do nothing.
-                .dead => {},
+                .dead => cancel_result = CancelError.Inactive,
 
                 // If it is in the submission queue, mark them as dead so they will never be
                 // submitted.
@@ -1347,6 +1386,7 @@ pub const Result = union(OperationType) {
 
 pub const CancelError = error{
     Unexpected,
+    Inactive,
 };
 
 pub const AcceptError = error{
@@ -1789,31 +1829,22 @@ test "iocp: canceling a completed operation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: xev.Completion = .{
-        .op = .{
-            .cancel = .{
-                .c = &c1,
-            },
-        },
-
-        .userdata = &called,
-        .callback = (struct {
-            fn callback(
-                ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
-                _ = l;
-                _ = c;
-                _ = r.cancel catch unreachable;
-                const ptr: *bool = @ptrCast(@alignCast(ud.?));
-                ptr.* = true;
-                return .disarm;
-            }
-        }).callback,
-    };
-    loop.add(&c_cancel);
+    var c_cancel: xev.Completion = .{};
+    loop.cancel(&c1, &c_cancel, bool, &called, (struct {
+        fn callback(
+            ud: ?*bool,
+            l: *xev.Loop,
+            c: *xev.Completion,
+            r: xev.CancelError!void,
+        ) xev.CallbackAction {
+            _ = l;
+            _ = c;
+            testing.expectError(CancelError.Inactive, r) catch @panic("expected error");
+            const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
+            ptr.* = true;
+            return .disarm;
+        }
+    }).callback);
 
     // Tick
     try loop.run(.until_done);

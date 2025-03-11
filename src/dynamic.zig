@@ -172,6 +172,58 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                     ).run(mode),
                 }
             }
+
+            pub fn cancel(
+                self: *Loop,
+                c: *Completion,
+                target_completion: *Completion,
+                comptime Userdata: type,
+                userdata: ?*Userdata,
+                comptime cb: *const fn (
+                    ud: ?*Userdata,
+                    l: *Loop,
+                    c: *Completion,
+                    r: CancelError!void,
+                ) CallbackAction,
+            ) void {
+                switch (backend) {
+                    inline else => |tag| {
+                        c.ensureTag(tag);
+                        target_completion.ensureTag(tag);
+                        const api = (comptime superset(tag)).Api();
+                        @field(
+                            self.backend,
+                            @tagName(tag),
+                        ).cancel(
+                            &@field(c.value, @tagName(tag)),
+                            &@field(target_completion.value, @tagName(tag)),
+                            Userdata,
+                            userdata,
+                            (struct {
+                                fn callback(
+                                    ud_inner: ?*Userdata,
+                                    l_inner: *api.Loop,
+                                    c_inner: *api.Completion,
+                                    r: api.CancelError!void,
+                                ) CallbackAction {
+                                    return cb(
+                                        ud_inner,
+                                        @fieldParentPtr("backend", @as(
+                                            *Loop.Union,
+                                            @fieldParentPtr(@tagName(tag), l_inner),
+                                        )),
+                                        @fieldParentPtr("value", @as(
+                                            *Completion.Union,
+                                            @fieldParentPtr(@tagName(tag), c_inner),
+                                        )),
+                                        r,
+                                    );
+                                }
+                            }).callback,
+                        );
+                    },
+                }
+            }
         };
 
         /// Helpers to convert between the subset/superset of backends.
@@ -193,54 +245,6 @@ pub fn Xev(comptime bes: []const AllBackend) type {
 
         pub fn ErrorSet(comptime field: []const []const u8) type {
             return dynamicpkg.ErrorSet(bes, field);
-        }
-
-        pub fn cancel(
-            l: *Loop,
-            c: *Completion,
-            target_completion: *Completion,
-            comptime Userdata: type,
-            userdata: ?*Userdata,
-            comptime cb: *const fn (
-                ud: ?*Userdata,
-                l: *Loop,
-                c: *Completion,
-                r: CancelError!void,
-            ) CallbackAction,
-        ) void {
-            switch (backend) {
-                inline else => |tag| {
-                    c.ensureTag(tag);
-                    target_completion.ensureTag(tag);
-                    const api = (comptime superset(tag)).Api();
-                    api.cancel(
-                        &@field(
-                            l.backend,
-                            @tagName(tag),
-                        ),
-                        &@field(c.value, @tagName(tag)),
-                        &@field(target_completion.value, @tagName(tag)),
-                        Userdata,
-                        userdata,
-                        (struct {
-                            fn callback(ud_inner: ?*Userdata, l_inner: *api.Loop, c_inner: *api.Completion, r: api.CancelError!void) CallbackAction {
-                                return cb(
-                                    ud_inner,
-                                    @fieldParentPtr("backend", @as(
-                                        *Loop.Union,
-                                        @fieldParentPtr(@tagName(tag), l_inner),
-                                    )),
-                                    @fieldParentPtr("value", @as(
-                                        *Completion.Union,
-                                        @fieldParentPtr(@tagName(tag), c_inner),
-                                    )),
-                                    r,
-                                );
-                            }
-                        }).callback,
-                    );
-                },
-            }
         }
 
         test {

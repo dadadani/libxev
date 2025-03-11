@@ -592,6 +592,18 @@ pub const Loop = struct {
                 }
             }).callback,
         };
+        if (c.flags.state == .dead) {
+            switch (cb(
+                @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
+                self,
+                c_cancel,
+                CancelError.Inactive,
+            )) {
+                .disarm => {},
+                .rearm => self.add(c_cancel),
+            }
+            return;
+        }
         self.add(c_cancel);
     }
 };
@@ -1048,6 +1060,7 @@ pub const CancelError = error{
     NotFound,
     ExpirationInProgress,
     Unexpected,
+    Inactive,
 };
 
 pub const CloseError = error{

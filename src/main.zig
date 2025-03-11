@@ -174,46 +174,6 @@ pub fn Xev(comptime be: Backend, comptime T: type) type {
             return .disarm;
         }
 
-        pub fn cancel(
-            l: *Loop,
-            c: *Completion,
-            target_completion: *Completion,
-            comptime Userdata: type,
-            userdata: ?*Userdata,
-            comptime cb: *const fn (
-                ud: ?*Userdata,
-                l: *Loop,
-                c: *Completion,
-                r: CancelError!void,
-            ) CallbackAction,
-        ) void {
-            c.* = .{
-                .op = .{
-                    .cancel = .{
-                        .c = target_completion,
-                    },
-                },
-                .userdata = userdata,
-                .callback = (struct {
-                    fn callback(
-                        ud: ?*anyopaque,
-                        l_inner: *Loop,
-                        c_inner: *Completion,
-                        r: Result,
-                    ) CallbackAction {
-                        return @call(.always_inline, cb, .{
-                            @import("watcher/common.zig").userdataValue(Userdata, ud),
-                            l_inner,
-                            c_inner,
-                            r.cancel,
-                        });
-                    }
-                }).callback,
-            };
-
-            l.add(c);
-        }
-
         test {
             @import("std").testing.refAllDecls(@This());
         }

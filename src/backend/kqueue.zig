@@ -150,6 +150,45 @@ pub const Loop = struct {
         self.submissions.push(completion);
     }
 
+    pub fn cancel(
+        self: *Loop,
+        c: *Completion,
+        c_cancel: *Completion,
+        comptime Userdata: type,
+        userdata: ?*Userdata,
+        comptime cb: *const fn (
+            ud: ?*Userdata,
+            l: *xev.Loop,
+            c: *xev.Completion,
+            r: CancelError!void,
+        ) xev.CallbackAction,
+    ) void {
+        c_cancel.* = .{
+            .op = .{
+                .cancel = .{
+                    .c = c,
+                },
+            },
+            .userdata = userdata,
+            .callback = (struct {
+                fn callback(
+                    ud: ?*anyopaque,
+                    l_inner: *xev.Loop,
+                    c_inner: *xev.Completion,
+                    r: xev.Result,
+                ) xev.CallbackAction {
+                    return @call(.always_inline, cb, .{
+                        @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(ud))),
+                        l_inner,
+                        c_inner,
+                        if (r.cancel) |_| {} else |err| err,
+                    });
+                }
+            }).callback,
+        };
+        self.add(c_cancel);
+    }
+
     /// Submit any enqueue completions. This does not fire any callbacks
     /// for completed events (success or error). Callbacks are only fired
     /// on the next tick.
@@ -257,13 +296,14 @@ pub const Loop = struct {
     fn process_cancellations(self: *Loop) void {
         while (self.cancellations.pop()) |c| {
             const target = c.op.cancel.c;
+            var cancel_result: CancelError!void = {};
             switch (target.flags.state) {
                 // If the target is dead already we do nothing.
-                .dead => {},
+                .dead => cancel_result = CancelError.Inactive,
 
                 // If the targeting is in the process of being removed
                 // from the kqueue we do nothing because its already done.
-                .deleting => {},
+                .deleting => cancel_result = CancelError.Inactive,
 
                 // If they are in the submission queue, mark them as dead
                 // so they will never be submitted.
@@ -274,7 +314,7 @@ pub const Loop = struct {
             }
 
             // We completed the cancellation.
-            c.result = .{ .cancel = {} };
+            c.result = .{ .cancel = cancel_result };
             self.completions.push(c);
         }
     }
@@ -1571,6 +1611,7 @@ const ThreadPoolError = error{
 
 pub const CancelError = error{
     Canceled,
+    Inactive,
 };
 
 pub const AcceptError = posix.KEventError || posix.AcceptError || error{
@@ -1588,12 +1629,12 @@ pub const ReadError = posix.KEventError ||
     posix.PReadError ||
     posix.RecvFromError ||
     error{
-    EOF,
-    Canceled,
-    MissingKevent,
-    PermissionDenied,
-    Unexpected,
-};
+        EOF,
+        Canceled,
+        MissingKevent,
+        PermissionDenied,
+        Unexpected,
+    };
 
 pub const WriteError = posix.KEventError ||
     posix.WriteError ||
@@ -1602,10 +1643,10 @@ pub const WriteError = posix.KEventError ||
     posix.SendMsgError ||
     posix.SendToError ||
     error{
-    Canceled,
-    PermissionDenied,
-    Unexpected,
-};
+        Canceled,
+        PermissionDenied,
+        Unexpected,
+    };
 
 pub const MachPortError = posix.KEventError || error{
     Canceled,
@@ -2129,7 +2170,7 @@ test "kqueue: canceling a completed operation" {
             ) xev.CallbackAction {
                 _ = l;
                 _ = c;
-                _ = r.cancel catch unreachable;
+                testing.expectError(CancelError.Inactive, r.cancel) catch @panic("expected error");
                 const ptr: *bool = @ptrCast(@alignCast(ud.?));
                 ptr.* = true;
                 return .disarm;
