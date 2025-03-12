@@ -1,6 +1,93 @@
-on: [push, pull_request]
 name: Test
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+
 jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.14.0
+        use-cache: false
+
+    - name: Run fmt
+      run: zig fmt --check **/*.zig
+
+  test:
+    needs: [fmt, prep]
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x86_64
+            target: x86_64-linux-gnu
+          - os: windows-latest
+            name: Windows x86_64
+            target: x86_64-windows
+          - os: macos-13
+            name: macOs x86_64
+            target: x86_64-macos
+          - os: macos-14
+            name: macOs Arm64 (14)
+            target: aarch64-macos
+          - os: macos-15
+            name: macOs Arm64 (15)
+            target: aarch64-macos
+          - os: ubuntu-latest
+            name: Linux Arm64
+            target: aarch64-linux
+            qemu-platform: arm64
+          - os: ubuntu-latest
+            name: Linux Risc-v64
+            target: riscv64-linux
+            qemu-platform: riscv64
+          - os: ubuntu-latest
+            name: Wasi Wasm32
+            target: wasm32-wasi
+
+    name: ${{ matrix.name }}
+    timeout-minutes: 20
+    runs-on: ${{matrix.os}}
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.14.0
+        use-cache: false
+
+    - name: Setup Wasmtime
+      if: contains(matrix.target, 'wasm')
+      uses: jcbhmr/setup-wasmtime@v2.0.4
+
+    - name: Setup QEMU
+      if: matrix.qemu-platform != ''
+      uses: docker/setup-qemu-action@v1
+
+    - name: Run tests
+      continue-on-error: ${{ matrix.qemu-platform != '' }}
+      run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }}${{ contains(matrix.target, 'wasm') && ' -fwasmtime -Doptimize=ReleaseFast' || '' }} --verbose --summary all
+
+    - name: build all benchmarks and examples
+      run: zig build -Dtarget=${{ matrix.target }} -Dexample -Dbench --summary all
+
   build:
     strategy:
       matrix:
@@ -21,7 +108,7 @@ jobs:
           x86-windows,
         ]
     runs-on: ${{ matrix.os }}
-    needs: [test-x86_64-linux, test-x86_64-windows]
+    needs: [test]
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -41,60 +128,6 @@ jobs:
     # will ensure we have all our dependencies.
     - name: build all
       run: zig build --summary all -Dtarget=${{ matrix.target }}
-
-  test-x86_64-linux:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        fetch-depth: 0
-
-    - name: Install zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.14.0
-        use-cache: false
-
-    - name: test
-      run: zig build test --summary all
-      
-    - name: Setup `wasmtime`
-      uses: bytecodealliance/actions/wasmtime/setup@v1
-      
-    - name: test wasi
-      run: zig build test -Dtarget=wasm32-wasi -fwasmtime --summary all
-
-    - name: build all benchmarks and examples
-      run: zig build -Dexample -Dbench --summary all
-
-    # Run a full build to ensure that works
-    #- run: nix build
-
-  test-x86_64-windows:
-    strategy:
-      matrix:
-        os: [windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        fetch-depth: 0
-
-    - name: Install zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.14.0
-        use-cache: false
-
-    - name: test
-      run: zig build test --summary all
 
     - name: build all benchmarks and examples
       run: zig build -Dexample -Dbench --summary all
