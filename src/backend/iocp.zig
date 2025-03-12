@@ -572,7 +572,6 @@ pub const Loop = struct {
                         },
                     }
                 }
-
                 break :action .{ .submitted = {} };
             },
 
@@ -592,14 +591,12 @@ pub const Loop = struct {
             .read => |*v| action: {
                 self.associate_fd(completion.handle().?) catch unreachable;
                 const buffer: []u8 = if (v.buffer == .slice) v.buffer.slice else &v.buffer.array;
-                break :action if (windows.exp.ReadFile(v.fd, buffer, &completion.overlapped)) |_|
-                    .{
-                        .submitted = {},
-                    }
-                else |err|
-                    .{
-                        .result = .{ .read = err },
-                    };
+                _ = windows.exp.ReadFile(
+                    v.fd,
+                    buffer,
+                    &completion.overlapped,
+                ) catch |err| break :action .{ .result = .{ .read = err } };
+                break :action .{ .submitted = {} };
             },
 
             .pread => |*v| action: {
@@ -607,14 +604,12 @@ pub const Loop = struct {
                 const buffer: []u8 = if (v.buffer == .slice) v.buffer.slice else &v.buffer.array;
                 completion.overlapped.DUMMYUNIONNAME.DUMMYSTRUCTNAME.Offset = @intCast(v.offset & 0xFFFF_FFFF_FFFF_FFFF);
                 completion.overlapped.DUMMYUNIONNAME.DUMMYSTRUCTNAME.OffsetHigh = @intCast(v.offset >> 32);
-                break :action if (windows.exp.ReadFile(v.fd, buffer, &completion.overlapped)) |_|
-                    .{
-                        .submitted = {},
-                    }
-                else |err|
-                    .{
-                        .result = .{ .pread = err },
-                    };
+                _ = windows.exp.ReadFile(
+                    v.fd,
+                    buffer,
+                    &completion.overlapped,
+                ) catch |err| break :action .{ .result = .{ .pread = err } };
+                break :action .{ .submitted = {} };
             },
 
             .shutdown => |*v| .{ .result = .{ .shutdown = posix.shutdown(asSocket(v.socket), v.how) } },
@@ -622,14 +617,12 @@ pub const Loop = struct {
             .write => |*v| action: {
                 self.associate_fd(completion.handle().?) catch unreachable;
                 const buffer: []const u8 = if (v.buffer == .slice) v.buffer.slice else v.buffer.array.array[0..v.buffer.array.len];
-                break :action if (windows.exp.WriteFile(v.fd, buffer, &completion.overlapped)) |_|
-                    .{
-                        .submitted = {},
-                    }
-                else |err|
-                    .{
-                        .result = .{ .write = err },
-                    };
+                _ = windows.exp.WriteFile(
+                    v.fd,
+                    buffer,
+                    &completion.overlapped,
+                ) catch |err| break :action .{ .result = .{ .write = err } };
+                break :action .{ .submitted = {} };
             },
 
             .pwrite => |*v| action: {
@@ -637,14 +630,12 @@ pub const Loop = struct {
                 const buffer: []const u8 = if (v.buffer == .slice) v.buffer.slice else v.buffer.array.array[0..v.buffer.array.len];
                 completion.overlapped.DUMMYUNIONNAME.DUMMYSTRUCTNAME.Offset = @intCast(v.offset & 0xFFFF_FFFF_FFFF_FFFF);
                 completion.overlapped.DUMMYUNIONNAME.DUMMYSTRUCTNAME.OffsetHigh = @intCast(v.offset >> 32);
-                break :action if (windows.exp.WriteFile(v.fd, buffer, &completion.overlapped)) |_|
-                    .{
-                        .submitted = {},
-                    }
-                else |err|
-                    .{
-                        .result = .{ .pwrite = err },
-                    };
+                _ = windows.exp.WriteFile(
+                    v.fd,
+                    buffer,
+                    &completion.overlapped,
+                ) catch |err| break :action .{ .result = .{ .pwrite = err } };
+                break :action .{ .submitted = {} };
             },
 
             .send => |*v| action: {
@@ -678,7 +669,6 @@ pub const Loop = struct {
                 v.wsa_buffer = .{ .buf = buffer.ptr, .len = @as(u32, @intCast(buffer.len)) };
 
                 var flags: u32 = 0;
-
                 const result = windows.ws2_32.WSARecv(
                     asSocket(v.fd),
                     @as([*]windows.ws2_32.WSABUF, @ptrCast(&v.wsa_buffer)),
@@ -1036,10 +1026,13 @@ pub const Completion = struct {
                 const result = windows.kernel32.GetOverlappedResult(v.fd, &self.overlapped, &bytes_transferred, windows.FALSE);
                 if (result == windows.FALSE) {
                     const err = windows.kernel32.GetLastError();
-                    break :r .{ .read = switch (err) {
-                        .OPERATION_ABORTED => error.Canceled,
-                        else => error.Unexpected,
-                    } };
+                    break :r .{
+                        .read = switch (err) {
+                            .OPERATION_ABORTED => error.Canceled,
+                            .HANDLE_EOF => error.EOF,
+                            else => error.Unexpected,
+                        },
+                    };
                 }
                 break :r .{ .read = @as(usize, @intCast(bytes_transferred)) };
             },
@@ -1049,10 +1042,13 @@ pub const Completion = struct {
                 const result = windows.kernel32.GetOverlappedResult(v.fd, &self.overlapped, &bytes_transferred, windows.FALSE);
                 if (result == windows.FALSE) {
                     const err = windows.kernel32.GetLastError();
-                    break :r .{ .read = switch (err) {
-                        .OPERATION_ABORTED => error.Canceled,
-                        else => error.Unexpected,
-                    } };
+                    break :r .{
+                        .pread = switch (err) {
+                            .OPERATION_ABORTED => error.Canceled,
+                            .HANDLE_EOF => error.EOF,
+                            else => error.Unexpected,
+                        },
+                    };
                 }
                 break :r .{ .pread = @as(usize, @intCast(bytes_transferred)) };
             },

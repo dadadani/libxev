@@ -138,7 +138,7 @@ pub const exp = struct {
         if (result == windows.FALSE) {
             const err = windows.kernel32.GetLastError();
             return switch (err) {
-                windows.Win32Error.IO_PENDING => null,
+                .IO_PENDING => null,
                 else => windows.unexpectedError(err),
             };
         }
@@ -156,7 +156,7 @@ pub const exp = struct {
         if (result == windows.FALSE) {
             const err = windows.kernel32.GetLastError();
             return switch (err) {
-                windows.Win32Error.IO_PENDING => null,
+                .IO_PENDING => null,
                 else => windows.unexpectedError(err),
             };
         }
