@@ -86,6 +86,7 @@ jobs:
       run: zig build test -Dtarget=${{ matrix.target }}${{ matrix.qemu-platform != '' && ' -fqemu' || '' }}${{ contains(matrix.target, 'wasm') && ' -fwasmtime -Doptimize=ReleaseFast' || '' }} --verbose --summary all
 
     - name: build all benchmarks and examples
+      if: ${{ !contains(matrix.target, 'wasm') }}
       run: zig build -Dtarget=${{ matrix.target }} -Dexample -Dbench --summary all
 
   build:
@@ -128,6 +129,3 @@ jobs:
     # will ensure we have all our dependencies.
     - name: build all
       run: zig build --summary all -Dtarget=${{ matrix.target }}
-
-    - name: build all benchmarks and examples
-      run: zig build -Dexample -Dbench --summary all
