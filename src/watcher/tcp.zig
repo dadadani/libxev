@@ -492,9 +492,15 @@ fn TCPDynamic(comptime xev: type) type {
 
 fn TCPTests(comptime xev: type, comptime Impl: type) type {
     return struct {
+        pub var callback_info_count: usize = 0;
+        pub var callback_info_count2: usize = 0;
+
         test "TCP: accept/connect/send/recv/close" {
             // We have no way to get a socket in WASI from a WASI context.
             if (builtin.os.tag == .wasi) return error.SkipZigTest;
+
+            callback_info_count = 0;
+            callback_info_count2 = 0;
 
             const testing = std.testing;
 
@@ -541,6 +547,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.AcceptError!Impl,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -557,6 +564,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = true;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -565,6 +573,8 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             try loop.run(.until_done);
             try testing.expect(server_conn != null);
             try testing.expect(connected);
+            try testing.expectEqual(1, callback_info_count);
+            try testing.expectEqual(1, callback_info_count2);
 
             // Close the server
             var server_closed = false;
@@ -578,11 +588,13 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = true;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
             try loop.run(.until_done);
             try testing.expect(server_closed);
+            try testing.expectEqual(2, callback_info_count);
 
             // Send
             var send_buf = [_]u8{ 1, 1, 2, 3, 5, 8, 13 };
@@ -597,6 +609,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = c;
                     _ = r catch unreachable;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -614,6 +627,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.ReadError!usize,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -621,6 +635,8 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             // Wait for the send/receive
             try loop.run(.until_done);
             try testing.expectEqualSlices(u8, &send_buf, recv_buf[0..recv_len]);
+            try testing.expectEqual(3, callback_info_count);
+            try testing.expectEqual(2, callback_info_count2);
 
             // Close
             server_conn.?.close(&loop, &c_accept, ?Impl, &server_conn, (struct {
@@ -633,6 +649,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = null;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -646,6 +663,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = false;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -654,6 +672,8 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             try testing.expect(server_conn == null);
             try testing.expect(!connected);
             try testing.expect(server_closed);
+            try testing.expectEqual(4, callback_info_count);
+            try testing.expectEqual(3, callback_info_count2);
         }
 
         // Potentially flaky - this test could hang if the sender is unable to
@@ -675,6 +695,9 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             if (builtin.os.tag == .wasi) return error.SkipZigTest;
             // Windows doesn't seem to respect the SNDBUF socket option.
             if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+            callback_info_count = 0;
+            callback_info_count2 = 0;
 
             const testing = std.testing;
 
@@ -706,6 +729,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
 
             // Accept
             var server_conn: ?Impl = null;
+
             server.accept(&loop, &c_accept, ?Impl, &server_conn, (struct {
                 fn callback(
                     ud: ?*?Impl,
@@ -714,6 +738,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.AcceptError!Impl,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -730,6 +755,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = true;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -738,6 +764,8 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             try loop.run(.until_done);
             try testing.expect(server_conn != null);
             try testing.expect(connected);
+            try testing.expectEqual(1, callback_info_count);
+            try testing.expectEqual(1, callback_info_count2);
 
             // Close the server
             var server_closed = false;
@@ -751,11 +779,13 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = true;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
             try loop.run(.until_done);
             try testing.expect(server_closed);
+            try testing.expectEqual(2, callback_info_count);
 
             // Unqueued send - Limit send buffer to 8kB, this should force partial writes.
             try posix.setsockopt(
@@ -783,6 +813,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.WriteError!usize,
                 ) xev.CallbackAction {
                     sent_unqueued_inner.?.* = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -792,6 +823,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             // SO_SNDBUF doesn't seem to be respected exactly, sent_unqueued will often be ~32kB
             // even though SO_SNDBUF was set to 8kB
             try testing.expect(sent_unqueued < (send_buf.len / 10));
+            try testing.expectEqual(3, callback_info_count);
 
             // Set up queued write
             var w_queue = xev.WriteQueue{};
@@ -809,6 +841,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     sent_queued_inner.?.* = r catch unreachable;
 
+                    callback_info_count += 1;
                     tcp.shutdown(l, c, void, null, (struct {
                         fn callback(
                             _: ?*void,
@@ -817,6 +850,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                             _: Impl,
                             _: xev.ShutdownError!void,
                         ) xev.CallbackAction {
+                            callback_info_count2 += 1;
                             return .disarm;
                         }
                     }).callback);
@@ -872,6 +906,8 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             try loop.run(.until_done);
             try testing.expectEqualSlices(u8, &send_buf, receiver.buf[0..receiver.bytes_read]);
             try testing.expect(send_buf.len == sent_unqueued + sent_queued);
+            try testing.expectEqual(4, callback_info_count);
+            try testing.expectEqual(2, callback_info_count2);
 
             // Close
             server_conn.?.close(&loop, &c_accept, ?Impl, &server_conn, (struct {
@@ -884,6 +920,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = null;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -897,6 +934,7 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     ud.?.* = false;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -905,6 +943,8 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
             try testing.expect(server_conn == null);
             try testing.expect(!connected);
             try testing.expect(server_closed);
+            try testing.expectEqual(5, callback_info_count);
+            try testing.expectEqual(3, callback_info_count2);
         }
     };
 }

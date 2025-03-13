@@ -904,8 +904,14 @@ fn UDPDynamic(comptime xev: type) type {
 
 fn UDPTests(comptime xev: type, comptime Impl: type) type {
     return struct {
+        pub var callback_info_count: usize = 0;
+        pub var callback_info_count2: usize = 0;
+
         test "UDP: read/write" {
             const testing = std.testing;
+
+            callback_info_count = 0;
+            callback_info_count2 = 0;
 
             var tpool = ThreadPool.init(.{});
             defer tpool.deinit();
@@ -935,6 +941,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.ReadError!usize,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -955,6 +962,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.WriteError!usize,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -964,6 +972,8 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
             try testing.expect(written > 0);
             try testing.expect(recv_len > 0);
             try testing.expectEqualSlices(u8, &send_buf, recv_buf[0..recv_len]);
+            try testing.expectEqual(1, callback_info_count);
+            try testing.expectEqual(1, callback_info_count2);
 
             // Close
             server.close(&loop, &c_read, void, null, (struct {
@@ -975,6 +985,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.CloseError!void,
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -987,15 +998,21 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.CloseError!void,
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
 
             try loop.run(.until_done);
+            try testing.expectEqual(2, callback_info_count);
+            try testing.expectEqual(2, callback_info_count2);
         }
 
         test "UDP: read/write (2)" {
             const testing = std.testing;
+
+            callback_info_count = 0;
+            callback_info_count2 = 0;
 
             var tpool = ThreadPool.init(.{});
             defer tpool.deinit();
@@ -1027,6 +1044,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.ReadError!usize,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -1047,6 +1065,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.ReadError!usize,
                 ) xev.CallbackAction {
                     testing.expectError(error.Canceled, r) catch @panic("failed");
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -1067,6 +1086,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.WriteError!usize,
                 ) xev.CallbackAction {
                     ud.?.* = r catch unreachable;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
@@ -1078,6 +1098,8 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
             try testing.expect(written > 0);
             try testing.expect(recv_len > 0);
             try testing.expectEqualSlices(u8, &send_buf, recv_buf[0..recv_len]);
+            try testing.expectEqual(1, callback_info_count);
+            try testing.expectEqual(1, callback_info_count2);
 
             var cancel_completion: xev.Completion = undefined;
             loop.cancel(&none_c_read, &cancel_completion, void, null, (struct {
@@ -1088,6 +1110,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.CancelError!void,
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -1102,6 +1125,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.CloseError!void,
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
+                    callback_info_count += 1;
                     return .disarm;
                 }
             }).callback);
@@ -1114,11 +1138,14 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
                     r: xev.CloseError!void,
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
+                    callback_info_count2 += 1;
                     return .disarm;
                 }
             }).callback);
 
             try loop.run(.until_done);
+            try testing.expectEqual(3, callback_info_count);
+            try testing.expectEqual(3, callback_info_count2);
         }
     };
 }
