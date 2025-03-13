@@ -719,7 +719,7 @@ pub const Completion = struct {
                 else switch (@as(posix.E, @enumFromInt(-res))) {
                     .CANCELED => error.Canceled,
                     .PIPE => error.BrokenPipe,
-                    .CONNRESET => error.ConnectionReset,
+                    .CONNRESET => error.ConnectionResetByPeer,
                     else => |errno| posix.unexpectedErrno(errno),
                 },
             },
@@ -730,7 +730,7 @@ pub const Completion = struct {
                 else switch (@as(posix.E, @enumFromInt(-res))) {
                     .CANCELED => error.Canceled,
                     .PIPE => error.BrokenPipe,
-                    .CONNRESET => error.ConnectionReset,
+                    .CONNRESET => error.ConnectionResetByPeer,
                     else => |errno| posix.unexpectedErrno(errno),
                 },
             },
@@ -829,7 +829,7 @@ pub const Completion = struct {
 
         return switch (@as(posix.E, @enumFromInt(-res))) {
             .CANCELED => error.Canceled,
-            .CONNRESET => error.ConnectionReset,
+            .CONNRESET => error.ConnectionResetByPeer,
             else => |errno| posix.unexpectedErrno(errno),
         };
     }
@@ -1085,7 +1085,7 @@ pub const ReadError = error{
     EOF,
     Canceled,
     Unexpected,
-    ConnectionReset,
+    ConnectionResetByPeer,
 };
 
 pub const ShutdownError = error{
@@ -1096,7 +1096,7 @@ pub const ShutdownError = error{
 pub const WriteError = error{
     Canceled,
     BrokenPipe,
-    ConnectionReset,
+    ConnectionResetByPeer,
     Unexpected,
 };
 
