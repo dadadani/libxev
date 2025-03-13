@@ -605,7 +605,17 @@ pub const Loop = struct {
             }
 
             // If we ran through the loop once we break if we don't care.
-            if (wait == 0) break;
+            if (wait == 0) {
+                // submit changes, since there is no next tick
+                const n = try kevent_syscall(
+                    self.kqueue_fd,
+                    events[0..changes],
+                    events[0..0],
+                    null,
+                );
+                assert(n == 0);
+                break;
+            }
         }
     }
 
