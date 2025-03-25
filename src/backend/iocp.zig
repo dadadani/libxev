@@ -498,6 +498,7 @@ pub const Loop = struct {
 
     // Get the absolute timestamp corresponding to the given "next_ms".
     pub fn timer_next(self: *Loop, next_ms: u64) u64 {
+        self.update_now();
         return self.cached_now + next_ms * std.time.ns_per_ms;
     }
 

@@ -328,7 +328,7 @@ pub const Loop = struct {
             (next_ms % std.time.ms_per_s) * std.time.ns_per_ms,
         ) orelse return max;
 
-        if (self.flags.now_outdated) self.update_now();
+        self.update_now();
 
         return .{
             .sec = std.math.add(isize, self.cached_now.sec, next_s) catch
