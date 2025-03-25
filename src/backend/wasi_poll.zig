@@ -1265,7 +1265,7 @@ test "wasi: loop time" {
 
     // TODO: Apparently, this sometimes fails because the program is "too" fast to start and causes now to become 0 (because of lossyCast), for now I am going to add a loop to waste cpu time
     var garbage: u64 = 0;
-    while (garbage < 1000000) {
+    while (garbage < 2000000) {
         garbage += 1;
     }
 
