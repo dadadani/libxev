@@ -713,7 +713,7 @@ pub const Loop = struct {
         }
     }
 
-    fn timer_next(self: Loop, next_ms: u64) posix.timespec {
+    fn timer_next(self: *Loop, next_ms: u64) posix.timespec {
         // Get the timestamp of the absolute time that we'll execute this timer.
         // There are lots of failure scenarios here in math. If we see any
         // of them we just use the maximum value.
