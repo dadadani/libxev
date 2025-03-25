@@ -368,7 +368,6 @@ pub const Loop = struct {
                 // should noop be counted?
                 // .noop,
                 .shutdown,
-                .timer,
                 => wait_rem -|= 1,
                 else => {},
             }
