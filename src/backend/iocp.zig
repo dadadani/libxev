@@ -264,6 +264,10 @@ pub const Loop = struct {
 
             // Run our expired timers.
             const now_timer: Timer = .{ .next = self.cached_now };
+
+            // save minimum timeout for later
+            const timer_next_ms: ?u64 = if (self.timers.peek()) |t| t.next else null;
+
             while (self.timers.peek()) |t| {
                 if (!Timer.less({}, t, &now_timer)) break;
 
@@ -350,12 +354,12 @@ pub const Loop = struct {
                     break :timeout 0;
                 // If we have a timer, we want to set the timeout to our next timer value. If we
                 // have no timer, we wait forever.
-                const t = self.timers.peek() orelse break :timeout null;
+                const next = timer_next_ms orelse break :timeout null;
 
                 // Determin the time in milliseconds. If the cast fails, we fallback to the maximum
                 // acceptable value.
                 const ms_now = self.cached_now / std.time.ns_per_ms;
-                const ms_next = t.next / std.time.ns_per_ms;
+                const ms_next = next / std.time.ns_per_ms;
                 const ms = ms_next -| ms_now;
                 break :timeout std.math.cast(windows.DWORD, ms) orelse windows.INFINITE - 1;
             };
