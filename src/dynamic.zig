@@ -308,14 +308,11 @@ fn DynamicCompletion(comptime dynamic: type) type {
 
         pub fn init() Self {
             return .{ .value = switch (dynamic.backend) {
-                inline else => |tag| value: {
-                    const api = (comptime dynamic.superset(tag)).Api();
-                    break :value @unionInit(
-                        Self.Union,
-                        @tagName(tag),
-                        api.Completion.init(),
-                    );
-                },
+                inline else => |tag| @unionInit(
+                    Self.Union,
+                    @tagName(tag),
+                    .{},
+                ),
             } };
         }
 
