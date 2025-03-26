@@ -965,6 +965,10 @@ pub const Completion = struct {
         active = 2,
     };
 
+    pub fn init() Completion {
+        return .{};
+    }
+
     /// Returns the state of this completion. There are some things to be cautious about when
     /// calling this function.
     ///
