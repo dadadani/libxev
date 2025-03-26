@@ -394,6 +394,9 @@ pub const Loop = struct {
             self.update_now();
             const now_timer: Operation.Timer = .{ .next = self.cached_now };
 
+            // save minimum timeout for later
+            const timer_next_spec: ?posix.timespec = if (self.timers.peek()) |t| t.next else null;
+
             // Run our expired timers
             while (self.timers.peek()) |t| {
                 if (!Operation.Timer.less({}, t, &now_timer)) break;
@@ -442,13 +445,13 @@ pub const Loop = struct {
             const timeout: i32 = if (wait_rem == 0) 0 else timeout: {
                 // If we have a timer, we want to set the timeout to our next
                 // timer value. If we have no timer, we wait forever.
-                const t = self.timers.peek() orelse break :timeout -1;
+                const next = timer_next_spec orelse break :timeout -1;
 
                 // Determine the time in milliseconds.
                 const ms_now = @as(u64, @intCast(self.cached_now.sec)) * std.time.ms_per_s +
                     @as(u64, @intCast(self.cached_now.nsec)) / std.time.ns_per_ms;
-                const ms_next = @as(u64, @intCast(t.next.sec)) * std.time.ms_per_s +
-                    @as(u64, @intCast(t.next.nsec)) / std.time.ns_per_ms;
+                const ms_next = @as(u64, @intCast(next.sec)) * std.time.ms_per_s +
+                    @as(u64, @intCast(next.nsec)) / std.time.ns_per_ms;
                 break :timeout @as(i32, @intCast(ms_next -| ms_now));
             };
 
