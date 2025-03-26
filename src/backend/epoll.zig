@@ -361,17 +361,6 @@ pub const Loop = struct {
             // something.
             if (c.flags.state != .adding) continue;
 
-            // These operations happen synchronously. Ensure they are
-            // decremented from wait_rem.
-            switch (c.op) {
-                .cancel,
-                // should noop be counted?
-                // .noop,
-                .shutdown,
-                => wait_rem -|= 1,
-                else => {},
-            }
-
             self.start(c);
         }
 
@@ -647,7 +636,7 @@ pub const Loop = struct {
                     if (self.thread_schedule(completion)) |_|
                         return
                     else |err|
-                        break :res .{ .read = err };
+                        break :res .{ .pread = err };
                 }
 
                 var ev: linux.epoll_event = .{
@@ -661,7 +650,7 @@ pub const Loop = struct {
                     linux.EPOLL.CTL_ADD,
                     fd,
                     &ev,
-                )) null else |err| .{ .read = err };
+                )) null else |err| .{ .pread = err };
             },
 
             .write => res: {
@@ -691,7 +680,7 @@ pub const Loop = struct {
                     if (self.thread_schedule(completion)) |_|
                         return
                     else |err|
-                        break :res .{ .write = err };
+                        break :res .{ .pwrite = err };
                 }
 
                 var ev: linux.epoll_event = .{
@@ -705,7 +694,7 @@ pub const Loop = struct {
                     linux.EPOLL.CTL_ADD,
                     fd,
                     &ev,
-                )) null else |err| .{ .write = err };
+                )) null else |err| .{ .pwrite = err };
             },
 
             .send => res: {
@@ -1508,11 +1497,13 @@ test "epoll: stop" {
 
     // Tick
     try loop.run(.no_wait);
+    try testing.expectEqual(@as(usize, 1), loop.active);
     try testing.expect(!called);
 
     // Stop
     loop.stop();
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 1), loop.active);
     try testing.expect(!called);
 }
 
@@ -1564,6 +1555,7 @@ test "epoll: timer" {
 
     // Tick
     while (!called) try loop.run(.no_wait);
+    try testing.expectEqual(@as(usize, 1), loop.active);
     try testing.expect(called);
     try testing.expect(!called2);
 
@@ -1826,6 +1818,7 @@ test "epoll: socket accept/connect/send/recv/close" {
 
     // Wait for the connection to be established
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(server_conn > 0);
     try testing.expect(connected);
 
@@ -1886,6 +1879,7 @@ test "epoll: socket accept/connect/send/recv/close" {
 
     // Wait for the send/receive
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expectEqualSlices(u8, c_send.op.send.buffer.slice, recv_buf[0..recv_len]);
 
     // Shutdown
@@ -1916,6 +1910,7 @@ test "epoll: socket accept/connect/send/recv/close" {
     };
     loop.add(&c_client_shutdown);
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(shutdown);
 
     // Read should be EOF
@@ -1950,6 +1945,7 @@ test "epoll: socket accept/connect/send/recv/close" {
     loop.add(&c_recv);
 
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(eof.? == true);
 
     // Close
@@ -2007,6 +2003,7 @@ test "epoll: socket accept/connect/send/recv/close" {
 
     // Wait for the sockets to close
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(ln == 0);
     try testing.expect(client_conn == 0);
 }
@@ -2036,6 +2033,7 @@ test "epoll: timer cancellation" {
 
     // Tick and verify we're not called.
     try loop.run(.no_wait);
+    try testing.expectEqual(@as(usize, 1), loop.active);
     try testing.expect(trigger == null);
 
     // Cancel the timer
@@ -2068,6 +2066,7 @@ test "epoll: timer cancellation" {
 
     // Tick
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(called);
     try testing.expect(trigger.? == .cancel);
 }
@@ -2097,6 +2096,7 @@ test "epoll: canceling a completed operation" {
 
     // Tick and verify we're not called.
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(trigger.? == .expiration);
 
     // Cancel the timer
@@ -2120,6 +2120,7 @@ test "epoll: canceling a completed operation" {
 
     // Tick
     try loop.run(.until_done);
+    try testing.expectEqual(@as(usize, 0), loop.active);
     try testing.expect(called);
     try testing.expect(trigger.? == .expiration);
 }
