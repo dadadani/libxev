@@ -32,9 +32,6 @@ pub const Kqueue = Xev(.kqueue, @import("backend/kqueue.zig"));
 pub const WasiPoll = Xev(.wasi_poll, @import("backend/wasi_poll.zig"));
 pub const IOCP = Xev(.iocp, @import("backend/iocp.zig"));
 
-/// Generic thread pool implementation.
-pub const ThreadPool = @import("ThreadPool.zig");
-
 /// This stream (lowercase s) can be used as a namespace to access
 /// Closeable, Writeable, Readable, etc. so that custom streams
 /// can be constructed.
@@ -109,6 +106,9 @@ pub fn Xev(comptime be: Backend, comptime T: type) type {
         /// it is up to the caller to say the right thing. This lets custom
         /// implementations also "quack" like an implementation.
         pub const backend = be;
+
+        /// Generic thread pool implementation.
+        pub const ThreadPool = @import("ThreadPool.zig");
 
         /// A function to test if this API is available on the
         /// current system.
@@ -190,7 +190,7 @@ test {
     _ = @import("heap.zig");
     _ = @import("queue.zig");
     _ = @import("queue_mpsc.zig");
-    _ = ThreadPool;
+    _ = @import("ThreadPool.zig");
     _ = Dynamic;
 
     // Test the C API
