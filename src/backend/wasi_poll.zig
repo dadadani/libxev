@@ -177,6 +177,22 @@ pub const Loop = struct {
         }
     }
 
+    /// Submit any enqueue completions. This does not fire any callbacks
+    /// for completed events (success or error). Callbacks are only fired
+    /// on the next tick.
+    pub fn submit(self: *Loop) !void {
+        var queued = self.submissions;
+        self.submissions = .{};
+        while (queued.pop()) |c| {
+            // We ignore any completions that aren't in the adding state.
+            // This usually means that we switched them to be deleted or
+            // something.
+            if (c.flags.state != .adding) continue;
+
+            self.start(c);
+        }
+    }
+
     /// Tick through the event loop once, waiting for at least "wait" completions
     /// to be processed by the loop itself.
     pub fn tick(self: *Loop, wait: u32) !void {
@@ -190,15 +206,7 @@ pub const Loop = struct {
 
         // Submit all the submissions. We copy the submission queue so that
         // any resubmits don't cause an infinite loop.
-        var queued = self.submissions;
-        self.submissions = .{};
-        while (queued.pop()) |c| {
-            // We ignore any completions that aren't in the adding state.
-            // This usually means that we switched them to be deleted or
-            // something.
-            if (c.flags.state != .adding) continue;
-            self.start(c);
-        }
+        try self.submit();
 
         // Wait and process events. We only do this if we have any active.
         var wait_rem = @as(usize, @intCast(wait));

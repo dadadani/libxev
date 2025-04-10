@@ -173,6 +173,15 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 }
             }
 
+            pub fn submit(self: *Loop) !void {
+                switch (backend) {
+                    inline else => |tag| try @field(
+                        self.backend,
+                        @tagName(tag),
+                    ).submit(),
+                }
+            }
+
             pub fn cancel(
                 self: *Loop,
                 c: *Completion,

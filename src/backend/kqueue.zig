@@ -464,6 +464,9 @@ pub const Loop = struct {
 
             // Process the completions we already have completed.
             while (self.completions.pop()) |c| {
+                // If we filled the events slice, we break to avoid overflow.
+                if (changes == events.len) break;
+
                 // disarm_ev is the Kevent to use for disarming if the
                 // completion wants to disarm. We have to calculate this up
                 // front because c can be reused in callback.
@@ -505,9 +508,6 @@ pub const Loop = struct {
                     // Only resubmit if we aren't already active (in the queue)
                     .rearm => if (!c_active) self.submissions.push(c),
                 }
-
-                // If we filled the events slice, we break to avoid overflow.
-                if (changes == events.len) break;
             }
 
             // Determine our next timeout based on the timers
