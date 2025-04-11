@@ -78,6 +78,13 @@ fn AsyncEventFd(comptime xev: type) type {
                         .buffer = .{ .array = undefined },
                     },
                 },
+                .flags = comptime switch (xev.backend) {
+                    .io_uring => .{},
+                    .epoll => .{
+                        .dup = true,
+                    },
+                    else => unreachable,
+                },
 
                 .userdata = userdata,
                 .callback = (struct {
@@ -731,6 +738,32 @@ fn AsyncTests(comptime xev: type, comptime Impl: type) type {
             try loop.run(.once);
             for (0..10) |_| try loop.run(.no_wait);
             try testing.expectEqual(@as(u32, 1), count);
+        }
+
+        test "async: notify close inner body" {
+            var loop = try xev.Loop.init(.{});
+            defer loop.deinit();
+
+            var notifier = try Impl.init();
+
+            // Send a notification
+            try notifier.notify();
+
+            var c_wait: xev.Completion = .{};
+            notifier.wait(&loop, &c_wait, Impl, &notifier, (struct {
+                fn callback(
+                    ud: ?*Impl,
+                    _: *xev.Loop,
+                    _: *xev.Completion,
+                    r: Impl.WaitError!void,
+                ) xev.CallbackAction {
+                    defer ud.?.deinit();
+                    _ = r catch unreachable;
+                    return .disarm;
+                }
+            }).callback);
+
+            try loop.run(.until_done);
         }
     };
 }

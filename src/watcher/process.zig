@@ -90,6 +90,13 @@ fn ProcessPidFd(comptime xev: type) type {
                         .events = events,
                     },
                 },
+                .flags = comptime switch (xev.backend) {
+                    .io_uring => .{},
+                    .epoll => .{
+                        .dup = true,
+                    },
+                    else => unreachable,
+                },
 
                 .userdata = userdata,
                 .callback = (struct {
@@ -565,6 +572,40 @@ fn ProcessTests(
 
             // Wait for wake
             try loop.run(.until_done);
+            try testing.expectEqual(@as(u32, 0), code.?);
+        }
+
+        test "process close inner body" {
+            const testing = std.testing;
+            const alloc = testing.allocator;
+
+            var child = std.process.Child.init(argv_0, alloc);
+            try child.spawn();
+
+            var loop = try xev.Loop.init(.{});
+            defer loop.deinit();
+
+            var p = try Impl.init(child.id);
+
+            var code: ?u32 = null;
+            var pack: struct { *?u32, *Impl } = .{ &code, &p };
+            var c_wait: xev.Completion = .{};
+            p.wait(&loop, &c_wait, struct { *?u32, *Impl }, &pack, (struct {
+                fn callback(
+                    ud: ?*struct { *?u32, *Impl },
+                    _: *xev.Loop,
+                    _: *xev.Completion,
+                    r: Impl.WaitError!u32,
+                ) xev.CallbackAction {
+                    defer ud.?.*[1].deinit();
+                    ud.?.*[0].* = r catch unreachable;
+                    return .disarm;
+                }
+            }).callback);
+
+            // Wait for wake
+            try loop.run(.until_done);
+
             try testing.expectEqual(@as(u32, 0), code.?);
         }
     };
