@@ -185,7 +185,7 @@ pub fn Xev(comptime bes: []const AllBackend) type {
             pub fn cancel(
                 self: *Loop,
                 c: *Completion,
-                target_completion: *Completion,
+                c_cancel: *Completion,
                 comptime Userdata: type,
                 userdata: ?*Userdata,
                 comptime cb: *const fn (
@@ -198,14 +198,14 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 switch (backend) {
                     inline else => |tag| {
                         c.ensureTag(tag);
-                        target_completion.ensureTag(tag);
+                        c_cancel.ensureTag(tag);
                         const api = (comptime superset(tag)).Api();
                         @field(
                             self.backend,
                             @tagName(tag),
                         ).cancel(
                             &@field(c.value, @tagName(tag)),
-                            &@field(target_completion.value, @tagName(tag)),
+                            &@field(c_cancel.value, @tagName(tag)),
                             Userdata,
                             userdata,
                             (struct {
