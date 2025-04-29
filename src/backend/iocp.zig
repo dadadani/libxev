@@ -1211,6 +1211,10 @@ pub const Completion = struct {
             .hEvent = null,
         };
         self.result = null;
+        switch (self.op) {
+            .accept => |*v| v.internal_accept_socket = null,
+            else => {},
+        }
     }
 };
 
