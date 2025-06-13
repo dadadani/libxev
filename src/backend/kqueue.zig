@@ -28,7 +28,9 @@ pub fn available() bool {
 }
 
 pub const NOTE_EXIT_FLAGS = switch (builtin.os.tag) {
-    .ios, .macos, => std.c.NOTE.EXIT | std.c.NOTE.EXITSTATUS,
+    .ios,
+    .macos,
+    => std.c.NOTE.EXIT | std.c.NOTE.EXITSTATUS,
     .freebsd => std.c.NOTE.EXIT,
     else => @compileError("kqueue not supported yet for target OS"),
 };
@@ -1027,7 +1029,7 @@ pub const Loop = struct {
     ///// Sends an empty message to this loop's mach port so that it wakes
     ///// up if it is blocking on kevent().
     //fn wakeup(self: *Loop) !void {
-        //try self.mach_port.notify();
+    //try self.mach_port.notify();
     //}
 };
 
@@ -1147,18 +1149,18 @@ pub const Completion = struct {
             //         .array => |*arr| arr,
             //     };
 
-                // The kevent below waits for a machport to have a message
-                // available AND automatically reads the message into the
-                // buffer since MACH_RCV_MSG is set.
-                //break :kevent .{
-                //    .ident = @intCast(v.port),
-                //    .filter = posix.system.EVFILT.MACHPORT,
-                //    .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
-                //    .fflags = darwin.MACH_RCV_MSG,
-                //    .data = 0,
-                //    .udata = @intFromPtr(self),
-                //    .ext = .{ @intFromPtr(slice.ptr), slice.len },
-                //};
+            // The kevent below waits for a machport to have a message
+            // available AND automatically reads the message into the
+            // buffer since MACH_RCV_MSG is set.
+            //break :kevent .{
+            //    .ident = @intCast(v.port),
+            //    .filter = posix.system.EVFILT.MACHPORT,
+            //    .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
+            //    .fflags = darwin.MACH_RCV_MSG,
+            //    .data = 0,
+            //    .udata = @intFromPtr(self),
+            //    .ext = .{ @intFromPtr(slice.ptr), slice.len },
+            //};
             //},
 
             .proc => |v| kevent_init(.{
