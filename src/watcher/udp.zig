@@ -908,6 +908,7 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
         pub var callback_info_count2: usize = 0;
 
         test "UDP: read/write" {
+            if (builtin.os.tag == .freebsd) return error.SkipZigTest;
             const testing = std.testing;
 
             callback_info_count = 0;
