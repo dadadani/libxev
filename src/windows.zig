@@ -106,6 +106,16 @@ pub const exp = struct {
         ) callconv(windows.WINAPI) windows.BOOL;
     };
 
+    pub const LPFN_CONNECTEX = *const fn (
+        Socket: windows.ws2_32.SOCKET,
+        SockAddr: *const windows.ws2_32.sockaddr,
+        SockLen: posix.socklen_t,
+        SendBuf: ?*const anyopaque,
+        SendBufLen: windows.DWORD,
+        BytesSent: *windows.DWORD,
+        Overlapped: *windows.OVERLAPPED,
+    ) callconv(.winapi) windows.BOOL;
+
     pub const CreateFileError = error{} || posix.UnexpectedError;
 
     pub fn CreateFile(

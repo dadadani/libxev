@@ -585,7 +585,7 @@ pub const Loop = struct {
             .connect => |*v| action: {
                 const as_socket = asSocket(v.socket);
                 // Associate our socket with loop's completion port.
-                self.associate_fd(v.socket) catch unreachable;
+                self.associate_fd(completion.handle().?) catch unreachable;
 
                 // ConnectEx requires socket to be initially bound.
                 // https://github.com/tigerbeetle/tigerbeetle/blob/main/src/io/windows.zig#L467
@@ -596,19 +596,8 @@ pub const Loop = struct {
                     posix.bind(as_socket, &bind_addr.any, bind_addr.getOsSockLen()) catch unreachable;
                 }
 
-                // NOTE: This can be declared in somewhere else; it all happens in comptime though so no issue putting it here.
-                const LPFN_CONNECTEX = *const fn (
-                    Socket: windows.ws2_32.SOCKET,
-                    SockAddr: *const windows.ws2_32.sockaddr,
-                    SockLen: posix.socklen_t,
-                    SendBuf: ?*const anyopaque,
-                    SendBufLen: windows.DWORD,
-                    BytesSent: *windows.DWORD,
-                    Overlapped: *windows.OVERLAPPED,
-                ) callconv(.winapi) windows.BOOL;
-
                 // Dynamically load the ConnectEx function.
-                const ConnectEx = windows.loadWinsockExtensionFunction(LPFN_CONNECTEX, as_socket, windows.ws2_32.WSAID_CONNECTEX) catch |err| switch (err) {
+                const ConnectEx = windows.loadWinsockExtensionFunction(windows.exp.LPFN_CONNECTEX, as_socket, windows.ws2_32.WSAID_CONNECTEX) catch |err| switch (err) {
                     error.OperationNotSupported => unreachable, // Something other than sockets has given.
                     error.FileDescriptorNotASocket => unreachable, // Must be preferred on a socket.
                     error.ShortRead => unreachable,
@@ -633,7 +622,7 @@ pub const Loop = struct {
                 // The following is necessary for various functions (shutdown, getsockopt, setsockopt, getsockname, getpeername) to work.
                 // https://learn.microsoft.com/en-us/windows/win32/api/mswsock/nc-mswsock-lpfn_connectex#remarks
                 // https://stackoverflow.com/questions/13598530/connectex-requires-the-socket-to-be-initially-bound-but-to-what
-                _ = windows.ws2_32.setsockopt(asSocket(v.socket), windows.ws2_32.SOL.SOCKET, windows.ws2_32.SO.UPDATE_CONNECT_CONTEXT, null, 0);
+                _ = windows.ws2_32.setsockopt(as_socket, windows.ws2_32.SOL.SOCKET, windows.ws2_32.SO.UPDATE_CONNECT_CONTEXT, null, 0);
 
                 break :action .{ .result = .{ .connect = {} } };
             },
@@ -1028,7 +1017,7 @@ pub const Completion = struct {
     /// Returns a handle for the current operation if it makes sense.
     fn handle(self: Completion) ?windows.HANDLE {
         return switch (self.op) {
-            inline .accept => |*v| v.socket,
+            inline .accept, .connect => |*v| v.socket,
             inline .read, .pread, .write, .pwrite, .recv, .send, .recvfrom, .sendto => |*v| v.fd,
             else => null,
         };
