@@ -114,7 +114,6 @@ fn AsyncEventFd(comptime xev: type) type {
                     },
                     else => unreachable,
                 },
-
                 .userdata = userdata,
                 .callback = (struct {
                     fn callback(
@@ -159,7 +158,13 @@ fn AsyncEventFd(comptime xev: type) type {
                         .events = posix.POLL.IN,
                     },
                 },
-
+                .flags = comptime switch (xev.backend) {
+                    .io_uring => .{},
+                    .epoll => .{
+                        .dup = true,
+                    },
+                    else => unreachable,
+                },
                 .userdata = userdata,
                 .callback = (struct {
                     fn callback(
