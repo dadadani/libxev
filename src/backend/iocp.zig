@@ -590,8 +590,11 @@ pub const Loop = struct {
                 // ConnectEx requires socket to be initially bound.
                 // https://github.com/tigerbeetle/tigerbeetle/blob/main/src/io/windows.zig#L467
                 {
-                    const inaddr_any = std.mem.zeroes([4]u8);
-                    const bind_addr = std.net.Address.initIp4(inaddr_any, 0);
+                    const bind_addr = switch (v.addr.any.family) {
+                        posix.AF.INET => std.net.Address.initIp4(std.mem.zeroes([4]u8), 0),
+                        posix.AF.INET6 => std.net.Address.initIp6(std.mem.zeroes([16]u8), 0, 0, 0),
+                        else => unreachable,
+                    };
                     // NOTE: This may return many other errors; we should extend `ConnectError` set.
                     posix.bind(as_socket, &bind_addr.any, bind_addr.getOsSockLen()) catch unreachable;
                 }
@@ -886,7 +889,7 @@ pub const Loop = struct {
                 // active count.
             },
 
-            .accept => |*v| {
+            inline .accept, .connect => |*v| {
                 if (completion.flags.state == .active) {
                     const result = windows.kernel32.CancelIoEx(asSocket(v.socket), &completion.overlapped);
                     cancel_result.?.* = if (result == windows.FALSE)
@@ -1073,7 +1076,19 @@ pub const Completion = struct {
                 }
 
                 // We got an error.
-                break :r .{ .connect = windows.unexpectedWSAError(windows.ws2_32.WSAGetLastError()) };
+                break :r .{
+                    .connect = switch (windows.ws2_32.WSAGetLastError()) {
+                        .WSA_OPERATION_ABORTED, .WSAECONNABORTED => error.Canceled,
+                        .WSAECONNRESET, .WSAENETRESET => error.ConnectionResetByPeer,
+                        .WSAEFAULT => unreachable,
+                        .WSAEINVAL => unreachable,
+                        .WSAESHUTDOWN => unreachable,
+                        .WSANOTINITIALISED => unreachable,
+                        .WSAECONNREFUSED => error.ConnectionRefused,
+                        .WSAENETUNREACH => error.HostUnreachable,
+                        else => |e| windows.unexpectedWSAError(e),
+                    },
+                };
             },
 
             .read => |*v| {
@@ -1463,6 +1478,9 @@ pub const CloseError = error{
 
 pub const ConnectError = error{
     Canceled,
+    ConnectionRefused,
+    HostUnreachable,
+    ConnectionResetByPeer,
     Unexpected,
 };
 
