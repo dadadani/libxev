@@ -6,9 +6,16 @@ const posix = std.posix;
 const queue = @import("../queue.zig");
 const queue_mpsc = @import("../queue_mpsc.zig");
 const heap = @import("../heap.zig");
-const main = @import("../main.zig");
-const xev = main.Epoll;
-const ThreadPool = main.ThreadPool;
+const ThreadPool = @import("../ThreadPool.zig");
+const Async = @import("../main.zig").Epoll.Async;
+
+const looppkg = @import("../loop.zig");
+const Options = looppkg.Options;
+const RunMode = looppkg.RunMode;
+const Callback = looppkg.Callback(@This());
+const CallbackAction = looppkg.CallbackAction;
+const CompletionState = looppkg.CompletionState;
+const noopCallback = looppkg.NoopCallback(@This());
 
 /// True if epoll is available on this platform.
 pub fn available() bool {
@@ -31,7 +38,7 @@ pub const Loop = struct {
     /// an empty message to this eventfd can be used to wake up the loop
     /// at any time. Waking up the loop via this eventfd won't trigger any
     /// particular completion, it just forces tick to cycle.
-    eventfd: xev.Async,
+    eventfd: Async,
 
     /// The number of active completions. This DOES NOT include completions that
     /// are queued in the submissions queue.
@@ -67,8 +74,8 @@ pub const Loop = struct {
         stopped: bool = false,
     } = .{},
 
-    pub fn init(options: xev.Options) !Loop {
-        var eventfd = try xev.Async.init();
+    pub fn init(options: Options) !Loop {
+        var eventfd = try Async.init();
         errdefer eventfd.deinit();
 
         var res: Loop = .{
@@ -89,7 +96,7 @@ pub const Loop = struct {
 
     /// Run the event loop. See RunMode documentation for details on modes.
     /// Once the loop is run, the pointer MUST remain stable.
-    pub fn run(self: *Loop, mode: xev.RunMode) !void {
+    pub fn run(self: *Loop, mode: RunMode) !void {
         switch (mode) {
             .no_wait => try self.tick(0),
             .once => try self.tick(1),
@@ -149,10 +156,10 @@ pub const Loop = struct {
         userdata: ?*Userdata,
         comptime cb: *const fn (
             ud: ?*Userdata,
-            l: *xev.Loop,
-            c: *xev.Completion,
+            l: *Loop,
+            c: *Completion,
             r: CancelError!void,
-        ) xev.CallbackAction,
+        ) CallbackAction,
     ) void {
         c_cancel.* = .{
             .op = .{
@@ -164,10 +171,10 @@ pub const Loop = struct {
             .callback = (struct {
                 fn callback(
                     ud: ?*anyopaque,
-                    l_inner: *xev.Loop,
-                    c_inner: *xev.Completion,
-                    r: xev.Result,
-                ) xev.CallbackAction {
+                    l_inner: *Loop,
+                    c_inner: *Completion,
+                    r: Result,
+                ) CallbackAction {
                     return @call(.always_inline, cb, .{
                         @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(ud))),
                         l_inner,
@@ -249,7 +256,7 @@ pub const Loop = struct {
         c: *Completion,
         next_ms: u64,
         userdata: ?*anyopaque,
-        comptime cb: xev.Callback,
+        comptime cb: Callback,
     ) void {
         c.* = .{
             .op = .{
@@ -271,7 +278,7 @@ pub const Loop = struct {
         c_cancel: *Completion,
         next_ms: u64,
         userdata: ?*anyopaque,
-        comptime cb: xev.Callback,
+        comptime cb: Callback,
     ) void {
         switch (c.flags.state) {
             .dead, .deleting => {
@@ -955,7 +962,7 @@ pub const Completion = struct {
 
     /// Userdata and callback for when the completion is finished.
     userdata: ?*anyopaque = null,
-    callback: xev.Callback = xev.noopCallback,
+    callback: Callback = noopCallback,
 
     //---------------------------------------------------------------
     // Internal fields
@@ -1021,7 +1028,7 @@ pub const Completion = struct {
     ///
     /// Third, if you stop the loop (loop.stop()), the completions registered
     /// with the loop will NOT be reset to a dead state.
-    pub fn state(self: Completion) xev.CompletionState {
+    pub fn state(self: Completion) CompletionState {
         return switch (self.flags.state) {
             .dead => .dead,
             .adding, .deleting, .active => .active,
@@ -1515,7 +1522,7 @@ test "epoll: stop" {
     var called = false;
     var c1: Completion = undefined;
     loop.timer(&c1, 1_000_000, &called, (struct {
-        fn callback(ud: ?*anyopaque, l: *xev.Loop, _: *xev.Completion, r: xev.Result) xev.CallbackAction {
+        fn callback(ud: ?*anyopaque, l: *Loop, _: *Completion, r: Result) CallbackAction {
             _ = l;
             _ = r;
             const b = @as(*bool, @ptrCast(ud.?));
@@ -1544,14 +1551,14 @@ test "epoll: timer" {
 
     // Add the timer
     var called = false;
-    var c1: xev.Completion = undefined;
+    var c1: Completion = undefined;
     loop.timer(&c1, 1, &called, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             _ = r;
             const b = @as(*bool, @ptrCast(ud.?));
@@ -1562,14 +1569,14 @@ test "epoll: timer" {
 
     // Add another timer
     var called2 = false;
-    var c2: xev.Completion = undefined;
+    var c2: Completion = undefined;
     loop.timer(&c2, 100_000, &called2, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             _ = r;
             const b = @as(*bool, @ptrCast(ud.?));
@@ -1599,13 +1606,13 @@ test "epoll: timer reset" {
     var loop = try Loop.init(.{});
     defer loop.deinit();
 
-    const cb: xev.Callback = (struct {
+    const cb: Callback = (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const v = @as(*?TimerTrigger, @ptrCast(ud.?));
             v.* = r.timer catch unreachable;
@@ -1641,13 +1648,13 @@ test "epoll: timer reset before tick" {
     var loop = try Loop.init(.{});
     defer loop.deinit();
 
-    const cb: xev.Callback = (struct {
+    const cb: Callback = (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const v = @as(*?TimerTrigger, @ptrCast(ud.?));
             v.* = r.timer catch unreachable;
@@ -1679,13 +1686,13 @@ test "epoll: timer reset after trigger" {
     var loop = try Loop.init(.{});
     defer loop.deinit();
 
-    const cb: xev.Callback = (struct {
+    const cb: Callback = (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const v = @as(*?TimerTrigger, @ptrCast(ud.?));
             v.* = r.timer catch unreachable;
@@ -1743,10 +1750,10 @@ test "epoll: timerfd" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = r.read catch unreachable;
                 _ = c;
                 _ = l;
@@ -1802,10 +1809,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 const conn = @as(*os.socket_t, @ptrCast(@alignCast(ud.?)));
@@ -1818,7 +1825,7 @@ test "epoll: socket accept/connect/send/recv/close" {
 
     // Connect
     var connected = false;
-    var c_connect: xev.Completion = .{
+    var c_connect: Completion = .{
         .op = .{
             .connect = .{
                 .socket = client_conn,
@@ -1830,10 +1837,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.connect catch unreachable;
@@ -1852,7 +1859,7 @@ test "epoll: socket accept/connect/send/recv/close" {
     try testing.expect(connected);
 
     // Send
-    var c_send: xev.Completion = .{
+    var c_send: Completion = .{
         .op = .{
             .send = .{
                 .fd = client_conn,
@@ -1863,10 +1870,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.send catch unreachable;
@@ -1880,7 +1887,7 @@ test "epoll: socket accept/connect/send/recv/close" {
     // Receive
     var recv_buf: [128]u8 = undefined;
     var recv_len: usize = 0;
-    var c_recv: xev.Completion = .{
+    var c_recv: Completion = .{
         .op = .{
             .recv = .{
                 .fd = server_conn,
@@ -1892,10 +1899,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 const ptr = @as(*usize, @ptrCast(@alignCast(ud.?)));
@@ -1913,7 +1920,7 @@ test "epoll: socket accept/connect/send/recv/close" {
 
     // Shutdown
     var shutdown = false;
-    var c_client_shutdown: xev.Completion = .{
+    var c_client_shutdown: Completion = .{
         .op = .{
             .shutdown = .{
                 .socket = client_conn,
@@ -1924,10 +1931,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.shutdown catch unreachable;
@@ -1956,10 +1963,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 const ptr = @as(*?bool, @ptrCast(@alignCast(ud.?)));
@@ -1978,7 +1985,7 @@ test "epoll: socket accept/connect/send/recv/close" {
     try testing.expect(eof.? == true);
 
     // Close
-    var c_client_close: xev.Completion = .{
+    var c_client_close: Completion = .{
         .op = .{
             .close = .{
                 .fd = client_conn,
@@ -1989,10 +1996,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.close catch unreachable;
@@ -2004,7 +2011,7 @@ test "epoll: socket accept/connect/send/recv/close" {
     };
     loop.add(&c_client_close);
 
-    var c_server_close: xev.Completion = .{
+    var c_server_close: Completion = .{
         .op = .{
             .close = .{
                 .fd = ln,
@@ -2015,10 +2022,10 @@ test "epoll: socket accept/connect/send/recv/close" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.close catch unreachable;
@@ -2045,14 +2052,14 @@ test "epoll: timer cancellation" {
 
     // Add the timer
     var trigger: ?TimerTrigger = null;
-    var c1: xev.Completion = undefined;
+    var c1: Completion = undefined;
     loop.timer(&c1, 100_000, &trigger, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const ptr = @as(*?TimerTrigger, @ptrCast(@alignCast(ud.?)));
             ptr.* = r.timer catch unreachable;
@@ -2067,7 +2074,7 @@ test "epoll: timer cancellation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: xev.Completion = .{
+    var c_cancel: Completion = .{
         .op = .{
             .cancel = .{
                 .c = &c1,
@@ -2078,10 +2085,10 @@ test "epoll: timer cancellation" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.cancel catch unreachable;
@@ -2108,14 +2115,14 @@ test "epoll: canceling a completed operation" {
 
     // Add the timer
     var trigger: ?TimerTrigger = null;
-    var c1: xev.Completion = undefined;
+    var c1: Completion = undefined;
     loop.timer(&c1, 1, &trigger, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const ptr = @as(*?TimerTrigger, @ptrCast(@alignCast(ud.?)));
             ptr.* = r.timer catch unreachable;
@@ -2130,22 +2137,31 @@ test "epoll: canceling a completed operation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: xev.Completion = .{};
-    loop.cancel(&c1, &c_cancel, bool, &called, (struct {
-        fn callback(
-            ud: ?*bool,
-            l: *xev.Loop,
-            c: *xev.Completion,
-            r: xev.CancelError!void,
-        ) xev.CallbackAction {
-            _ = l;
-            _ = c;
-            testing.expectError(CancelError.Inactive, r) catch @panic("expected error");
-            const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
-            ptr.* = true;
-            return .disarm;
-        }
-    }).callback);
+    var c_cancel: Completion = .{
+        .op = .{
+            .cancel = .{
+                .c = &c1,
+            },
+        },
+
+        .userdata = &called,
+        .callback = (struct {
+            fn callback(
+                ud: ?*anyopaque,
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
+                _ = l;
+                _ = c;
+                _ = r.cancel catch unreachable;
+                const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
+                ptr.* = true;
+                return .disarm;
+            }
+        }).callback,
+    };
+    loop.add(&c_cancel);
 
     // Tick
     try loop.run(.until_done);
