@@ -46,12 +46,12 @@ fn UDPSendto(comptime xev: type) type {
             userdata: ?*anyopaque,
         };
 
-        pub usingnamespace stream.Stream(xev, Self, .{
+        const S = stream.Stream(xev, Self, .{
             .close = true,
             .poll = true,
-            .read = .none,
-            .write = .none,
         });
+        pub const close = S.close;
+        pub const poll = S.poll;
 
         /// Initialize a new UDP with the family from the given address. Only
         /// the family is used, the actual address has no impact on the created
@@ -227,12 +227,10 @@ fn UDPSendtoIOCP(comptime xev: type) type {
             userdata: ?*anyopaque,
         };
 
-        pub usingnamespace stream.Stream(xev, Self, .{
+        const S = stream.Stream(xev, Self, .{
             .close = true,
-            .poll = false,
-            .read = .none,
-            .write = .none,
         });
+        pub const close = S.close;
 
         /// Initialize a new UDP with the family from the given address. Only
         /// the family is used, the actual address has no impact on the created
@@ -425,12 +423,12 @@ fn UDPSendMsg(comptime xev: type) type {
             },
         };
 
-        pub usingnamespace stream.Stream(xev, Self, .{
+        const S = stream.Stream(xev, Self, .{
             .close = true,
             .poll = true,
-            .read = .none,
-            .write = .none,
         });
+        pub const close = S.close;
+        pub const poll = S.poll;
 
         /// Initialize a new UDP with the family from the given address. Only
         /// the family is used, the actual address has no impact on the created
@@ -697,13 +695,13 @@ fn UDPDynamic(comptime xev: type) type {
         pub const Union = xev.Union(&.{"UDP"});
         pub const State = xev.Union(&.{ "UDP", "State" });
 
-        pub usingnamespace stream.Stream(xev, Self, .{
+        const S = stream.Stream(xev, Self, .{
             .close = true,
             .poll = true,
-            .read = .none,
-            .write = .none,
             .type = "UDP",
         });
+        pub const close = S.close;
+        pub const poll = S.poll;
 
         pub fn init(addr: std.net.Address) !Self {
             return .{ .backend = switch (xev.backend) {
@@ -906,6 +904,18 @@ fn UDPTests(comptime xev: type, comptime Impl: type) type {
     return struct {
         pub var callback_info_count: usize = 0;
         pub var callback_info_count2: usize = 0;
+
+        test "UDP: Stream decls" {
+            if (!@hasDecl(Impl, "S")) return;
+            const Stream = Impl.S;
+            inline for (@typeInfo(Stream).@"struct".decls) |decl| {
+                const Decl = @TypeOf(@field(Stream, decl.name));
+                if (Decl == void) continue;
+                if (!@hasDecl(Impl, decl.name)) {
+                    @compileError("missing decl: " ++ decl.name);
+                }
+            }
+        }
 
         test "UDP: read/write" {
             if (builtin.os.tag == .freebsd) return error.SkipZigTest;

@@ -26,12 +26,18 @@ fn TCPStream(comptime xev: type) type {
 
         fd: FdType,
 
-        pub usingnamespace stream.Stream(xev, Self, .{
+        const S = stream.Stream(xev, Self, .{
             .close = true,
             .poll = true,
             .read = .recv,
             .write = .send,
         });
+        pub const close = S.close;
+        pub const poll = S.poll;
+        pub const read = S.read;
+        pub const write = S.write;
+        pub const writeInit = S.writeInit;
+        pub const queueWrite = S.queueWrite;
 
         /// Initialize a new TCP with the family from the given address. Only
         /// the family is used, the actual address has no impact on the created
@@ -260,7 +266,7 @@ fn TCPDynamic(comptime xev: type) type {
 
         pub const Union = xev.Union(&.{"TCP"});
 
-        pub usingnamespace stream.Stream(xev, Self, .{
+        const S = stream.Stream(xev, Self, .{
             .close = true,
             .poll = true,
             .read = .read,
@@ -268,6 +274,11 @@ fn TCPDynamic(comptime xev: type) type {
             .threadpool = true,
             .type = "TCP",
         });
+        pub const close = S.close;
+        pub const poll = S.poll;
+        pub const read = S.read;
+        pub const write = S.write;
+        pub const queueWrite = S.queueWrite;
 
         pub fn init(addr: std.net.Address) !Self {
             return .{ .backend = switch (xev.backend) {
@@ -505,6 +516,18 @@ fn TCPTests(comptime xev: type, comptime Impl: type) type {
     return struct {
         pub var callback_info_count: usize = 0;
         pub var callback_info_count2: usize = 0;
+
+        test "TCP: Stream decls" {
+            if (!@hasDecl(Impl, "S")) return;
+            const Stream = Impl.S;
+            inline for (@typeInfo(Stream).@"struct".decls) |decl| {
+                const Decl = @TypeOf(@field(Stream, decl.name));
+                if (Decl == void) continue;
+                if (!@hasDecl(Impl, decl.name)) {
+                    @compileError("missing decl: " ++ decl.name);
+                }
+            }
+        }
 
         test "TCP: accept/connect/send/recv/close" {
             // We have no way to get a socket in WASI from a WASI context.
