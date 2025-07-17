@@ -49,6 +49,12 @@ pub fn build(b: *std.Build) !void {
         "Install the test binaries into zig-out",
     ) orelse false;
 
+    const c_api_module = b.createModule(.{
+        .root_source_file = b.path("src/c_api.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // Our tests require libc on Linux and Mac. Note that libxev itself
     // does NOT require libc.
     const test_libc = switch (target.result.os.tag) {
@@ -77,11 +83,10 @@ pub fn build(b: *std.Build) !void {
 
     // Static C lib
     const static_c_lib: ?*std.Build.Step.Compile = if (target.result.os.tag != .wasi) lib: {
-        const static_lib = b.addStaticLibrary(.{
+        const static_lib = b.addLibrary(.{
+            .linkage = .static,
             .name = "xev",
-            .root_source_file = b.path("src/c_api.zig"),
-            .target = target,
-            .optimize = optimize,
+            .root_module = c_api_module,
         });
 
         static_lib.linkLibC();
@@ -122,11 +127,10 @@ pub fn build(b: *std.Build) !void {
     if (target.query.isNative()) {
         const dynamic_lib_name = "xev";
 
-        const dynamic_lib = b.addSharedLibrary(.{
+        const dynamic_lib = b.addLibrary(.{
+            .linkage = .dynamic,
             .name = dynamic_lib_name,
-            .root_source_file = b.path("src/c_api.zig"),
-            .target = target,
-            .optimize = optimize,
+            .root_module = c_api_module,
         });
         b.installArtifact(dynamic_lib);
         b.default_step.dependOn(&dynamic_lib.step);
@@ -239,17 +243,16 @@ fn benchTargets(
         // Executable builder.
         const c_exe = b.addExecutable(.{
             .name = name,
-            .root_source_file = b.path(path),
-            .target = target,
-            .optimize = .ReleaseFast, // benchmarks are always release fast
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(b.fmt(
+                    "src/bench/{s}",
+                    .{entry.name},
+                )),
+                .target = target,
+                .optimize = .ReleaseFast, // benchmarks are always release fast
+            }),
         });
         c_exe.root_module.addImport("xev", b.modules.get("xev").?);
-        if (install) {
-            const install_step = b.addInstallArtifact(c_exe, .{
-                .dest_dir = .{ .override = .{ .custom = "bench" } },
-            });
-            b.getInstallStep().dependOn(&install_step.step);
-        }
 
         // Store the mapping
         try map.put(try b.allocator.dupe(u8, name), c_exe);
@@ -299,9 +302,14 @@ fn exampleTargets(
         if (is_zig) {
             const c_exe = b.addExecutable(.{
                 .name = name,
-                .root_source_file = .{ .cwd_relative = path },
-                .target = target,
-                .optimize = optimize,
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(b.fmt(
+                        "examples/{s}",
+                        .{entry.name},
+                    )),
+                    .target = target,
+                    .optimize = optimize,
+                }),
             });
             c_exe.root_module.addImport("xev", b.modules.get("xev").?);
             if (install) {
@@ -314,8 +322,10 @@ fn exampleTargets(
             const c_lib = c_lib_ orelse return error.UnsupportedPlatform;
             const c_exe = b.addExecutable(.{
                 .name = name,
-                .target = target,
-                .optimize = optimize,
+                .root_module = b.createModule(.{
+                    .target = target,
+                    .optimize = optimize,
+                }),
             });
             c_exe.linkLibC();
             c_exe.addIncludePath(b.path("include"));
