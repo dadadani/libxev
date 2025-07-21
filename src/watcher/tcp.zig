@@ -182,6 +182,17 @@ fn TCPStream(comptime xev: type) type {
                 }).callback,
             };
 
+            // If we're dup-ing, then we ask the backend to manage the fd.
+            switch (xev.backend) {
+                .io_uring,
+                .kqueue,
+                .wasi_poll,
+                .iocp,
+                => {},
+
+                .epoll => c.flags.dup = true,
+            }
+
             loop.add(c);
         }
 
