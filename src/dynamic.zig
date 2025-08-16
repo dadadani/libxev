@@ -164,6 +164,24 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 };
             }
 
+            pub fn now(self: *Loop) i64 {
+                return switch (backend) {
+                    inline else => |tag| @field(
+                        self.backend,
+                        @tagName(tag),
+                    ).now(),
+                };
+            }
+
+            pub fn update_now(self: *Loop) i64 {
+                return switch (backend) {
+                    inline else => |tag| @field(
+                        self.backend,
+                        @tagName(tag),
+                    ).update_now(),
+                };
+            }
+
             pub fn run(self: *Loop, mode: RunMode) !void {
                 switch (backend) {
                     inline else => |tag| try @field(
