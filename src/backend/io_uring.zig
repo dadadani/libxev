@@ -128,7 +128,7 @@ pub const Loop = struct {
     }
 
     pub fn countPending(self: *Loop) usize {
-        return self.active + (if (self.submissions.empty()) 0 else 1);
+        return self.active + @as(u1, if (self.submissions.empty()) 0 else 1);
     }
 
     /// Tick the loop. The mode is comptime so we can do some tricks to
