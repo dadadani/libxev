@@ -439,7 +439,8 @@ pub const Loop = struct {
     }
 
     pub fn countPending(self: *Loop) usize {
-        return self.active + @as(u1, if (self.completions.empty()) 0 else 1);
+        return self.active + @as(u1, if (self.submissions.empty()) 0 else 1) +
+            @as(u1, if (self.completions.empty()) 0 else 1);
     }
 
     /// Add a timer to the loop. The timer will execute in "next_ms". This is oneshot: the timer
