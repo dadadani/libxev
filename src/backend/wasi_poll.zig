@@ -648,6 +648,10 @@ pub const Loop = struct {
         if (get_now()) |t| self.cached_now = t else |_| {}
     }
 
+    pub fn hasPendingTasks(self: *Loop) bool {
+        return self.active > 0;
+    }
+
     fn timer_next(next_ms: u64) wasi.timestamp_t {
         // Get the absolute time we'll execute this timer next.
         var now_ts: wasi.timestamp_t = undefined;

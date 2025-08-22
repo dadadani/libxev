@@ -173,12 +173,21 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 };
             }
 
-            pub fn update_now(self: *Loop) i64 {
+            pub fn updateNow(self: *Loop) i64 {
                 return switch (backend) {
                     inline else => |tag| @field(
                         self.backend,
                         @tagName(tag),
                     ).update_now(),
+                };
+            }
+
+            pub fn hasPendingTasks(self: *Loop) bool {
+                return switch (backend) {
+                    inline else => |tag| @field(
+                        self.backend,
+                        @tagName(tag),
+                    ).hasPendingTasks(),
                 };
             }
 

@@ -127,6 +127,10 @@ pub const Loop = struct {
         self.flags.now_outdated = false;
     }
 
+    pub fn hasPendingTasks(self: *Loop) bool {
+        return self.active > 0 or !self.submissions.empty();
+    }
+
     /// Tick the loop. The mode is comptime so we can do some tricks to
     /// avoid function calls and runtime branching.
     fn tick_(self: *Loop, comptime mode: xev.RunMode) !void {

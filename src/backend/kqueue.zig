@@ -641,6 +641,12 @@ pub const Loop = struct {
         };
     }
 
+    pub fn hasPendingTasks(self: *Loop) bool {
+        return self.active > 0 or
+            !self.submissions.empty() or
+            !self.completions.empty();
+    }
+
     /// Add a timer to the loop. The timer will execute in "next_ms". This
     /// is oneshot: the timer will not repeat. To repeat a timer, either
     /// schedule another in your callback or return rearm from the callback.
@@ -732,9 +738,7 @@ pub const Loop = struct {
     }
 
     fn done(self: *Loop) bool {
-        return self.flags.stopped or (self.active == 0 and
-            self.submissions.empty() and
-            self.completions.empty());
+        return self.flags.stopped or !self.hasPendingTasks();
     }
 
     /// Start the completion. This returns true if the Kevent was set

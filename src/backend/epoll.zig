@@ -236,6 +236,10 @@ pub const Loop = struct {
         };
     }
 
+    pub fn hasPendingTasks(self: *Loop) bool {
+        return self.active > 0;
+    }
+
     /// Add a timer to the loop. The timer will execute in "next_ms". This
     /// is oneshot: the timer will not repeat. To repeat a timer, either
     /// schedule another in your callback or return rearm from the callback.
