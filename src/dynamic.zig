@@ -182,12 +182,12 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 };
             }
 
-            pub fn hasPendingTasks(self: *Loop) bool {
+            pub fn countPending(self: *Loop) usize {
                 return switch (backend) {
                     inline else => |tag| @field(
                         self.backend,
                         @tagName(tag),
-                    ).hasPendingTasks(),
+                    ).countPending(),
                 };
             }
 

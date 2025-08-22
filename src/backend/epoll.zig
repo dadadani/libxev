@@ -236,8 +236,8 @@ pub const Loop = struct {
         };
     }
 
-    pub fn hasPendingTasks(self: *Loop) bool {
-        return self.active > 0;
+    pub fn countPending(self: *Loop) usize {
+        return self.active;
     }
 
     /// Add a timer to the loop. The timer will execute in "next_ms". This

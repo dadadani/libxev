@@ -648,8 +648,8 @@ pub const Loop = struct {
         if (get_now()) |t| self.cached_now = t else |_| {}
     }
 
-    pub fn hasPendingTasks(self: *Loop) bool {
-        return self.active > 0;
+    pub fn countPending(self: *Loop) usize {
+        return self.active;
     }
 
     fn timer_next(next_ms: u64) wasi.timestamp_t {

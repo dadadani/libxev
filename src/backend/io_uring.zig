@@ -127,8 +127,8 @@ pub const Loop = struct {
         self.flags.now_outdated = false;
     }
 
-    pub fn hasPendingTasks(self: *Loop) bool {
-        return self.active > 0 or !self.submissions.empty();
+    pub fn countPending(self: *Loop) usize {
+        return self.active + if (self.submissions.empty()) 0 else 1;
     }
 
     /// Tick the loop. The mode is comptime so we can do some tricks to
