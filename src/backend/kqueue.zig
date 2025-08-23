@@ -743,7 +743,9 @@ pub const Loop = struct {
     }
 
     fn done(self: *Loop) bool {
-        return self.flags.stopped or self.countPending() == 0;
+        return self.flags.stopped or (self.active == 0 and
+            self.submissions.empty() and
+            self.completions.empty());
     }
 
     /// Start the completion. This returns true if the Kevent was set
