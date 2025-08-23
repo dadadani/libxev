@@ -494,7 +494,13 @@ pub const Loop = struct {
                     },
 
                     // Only resubmit if we aren't already active (in the queue)
-                    .rearm => if (!c_active) self.submissions.push(c),
+                    .rearm => {
+                        c.result = null;
+                        if (!c_active)
+                            self.submissions.push(c)
+                        else
+                            c.flags.state = .active;
+                    },
                 }
             }
 
