@@ -2788,10 +2788,10 @@ test "kqueue: socket accept/cancel cancellation should decrease active count" {
             ) CallbackAction {
                 _ = ud;
                 _ = r.accept catch |err| switch (err) {
-                    error.Canceled => {},
+                    error.Canceled => return .disarm,
                     else => @panic("wrong"),
                 };
-                return .disarm;
+                @panic("should be canceled");
             }
         }).callback,
     };
@@ -2826,10 +2826,8 @@ test "kqueue: socket accept/cancel cancellation should decrease active count" {
 
     try testing.expectEqual(@as(usize, 2), loop.active);
     try loop.run(.once);
-    try testing.expectEqual(@as(usize, 1), loop.active);
-    try loop.run(.once);
-    try testing.expect(cancel_called);
 
+    try testing.expect(cancel_called);
     // Both callbacks are called active count should be 0
     try testing.expectEqual(@as(usize, 0), loop.active);
 
