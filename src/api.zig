@@ -24,6 +24,9 @@ pub fn Xev(comptime be: Backend, comptime T: type) type {
         /// implementations also "quack" like an implementation.
         pub const backend = be;
 
+        /// Generic thread pool implementation.
+        pub const ThreadPool = @import("ThreadPool.zig");
+
         /// A function to test if this API is available on the
         /// current system.
         pub const available = T.available;
