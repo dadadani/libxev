@@ -31,6 +31,9 @@ pub const Loop = struct {
     /// are queued in the submissions queue.
     active: usize = 0,
 
+    /// The number of active timers.
+    active_timers: usize = 0,
+
     /// Our queue of submissions that failed to enqueue.
     submissions: queue.Intrusive(Completion) = .{},
 
@@ -127,8 +130,9 @@ pub const Loop = struct {
         self.flags.now_outdated = false;
     }
 
-    pub fn countPending(self: *Loop) usize {
-        return self.active + @as(u1, if (self.submissions.empty()) 0 else 1);
+    pub fn countPending(self: *Loop, comptime opts: struct { timers: bool }) usize {
+        return (self.active - self.active_timers) + @as(u1, if (self.submissions.empty()) 0 else 1) +
+            if (comptime opts.timers) @as(u1, if (self.active_timers > 0) 1 else 0) else 0;
     }
 
     /// Tick the loop. The mode is comptime so we can do some tricks to
@@ -503,11 +507,14 @@ pub const Loop = struct {
                 },
             ),
 
-            .timer => |*v| sqe.prep_timeout(
-                &v.next,
-                0,
-                linux.IORING_TIMEOUT_ABS,
-            ),
+            .timer => |*v| {
+                self.active_timers += 1;
+                sqe.prep_timeout(
+                    &v.next,
+                    0,
+                    linux.IORING_TIMEOUT_ABS,
+                );
+            },
 
             .timer_remove => |v| sqe.prep_timeout_remove(
                 @intFromPtr(v.timer),
@@ -752,6 +759,8 @@ pub const Completion = struct {
 
             .timer => |*op| timer: {
                 const e = @as(posix.E, @enumFromInt(-res));
+
+                loop.active_timers -= 1;
 
                 // If we have reset set, that means that we were canceled so
                 // that we can update our expiration time.

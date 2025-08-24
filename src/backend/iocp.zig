@@ -438,9 +438,10 @@ pub const Loop = struct {
         self.cached_now = windows.QueryPerformanceCounter() * self.qpc_duration;
     }
 
-    pub fn countPending(self: *Loop) usize {
+    pub fn countPending(self: *Loop, comptime opts: struct { timers: bool }) usize {
         return self.active + @as(u1, if (self.submissions.empty()) 0 else 1) +
-            @as(u1, if (self.completions.empty()) 0 else 1);
+            @as(u1, if (self.completions.empty()) 0 else 1) +
+            if (comptime opts.timers) @as(u1, if (self.timers.root != null) 1 else 0) else 0;
     }
 
     /// Add a timer to the loop. The timer will execute in "next_ms". This is oneshot: the timer

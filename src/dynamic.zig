@@ -182,12 +182,12 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 };
             }
 
-            pub fn countPending(self: *Loop) usize {
+            pub fn countPending(self: *Loop, comptime opts: struct { timers: bool }) usize {
                 return switch (backend) {
                     inline else => |tag| @field(
                         self.backend,
                         @tagName(tag),
-                    ).countPending(),
+                    ).countPending(opts),
                 };
             }
 

@@ -236,8 +236,9 @@ pub const Loop = struct {
         };
     }
 
-    pub fn countPending(self: *Loop) usize {
-        return self.active + @as(u1, if (self.submissions.empty()) 0 else 1);
+    pub fn countPending(self: *Loop, comptime opts: struct { timers: bool }) usize {
+        return self.active + @as(u1, if (self.submissions.empty()) 0 else 1) +
+            if (comptime opts.timers) @as(u1, if (self.timers.root != null) 1 else 0) else 0;
     }
 
     /// Add a timer to the loop. The timer will execute in "next_ms". This

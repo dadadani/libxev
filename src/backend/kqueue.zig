@@ -472,6 +472,7 @@ pub const Loop = struct {
                 // the active count later
                 const c_active = c.flags.state == .active;
                 c.flags.state = .dead;
+                if (c_active) self.active -= 1;
 
                 // Decrease our waiters because we are definitely processing one.
                 wait_rem -|= 1;
@@ -489,8 +490,6 @@ pub const Loop = struct {
                             changes += 1;
                             assert(changes <= events.len);
                         }
-
-                        if (c_active) self.active -= 1;
                     },
 
                     // Only resubmit if we aren't already active (in the queue)
@@ -498,8 +497,10 @@ pub const Loop = struct {
                         c.result = null;
                         if (!c_active)
                             self.submissions.push(c)
-                        else
+                        else {
+                            self.active += 1;
                             c.flags.state = .active;
+                        }
                     },
                 }
             }
@@ -647,9 +648,10 @@ pub const Loop = struct {
         };
     }
 
-    pub fn countPending(self: *Loop) usize {
+    pub fn countPending(self: *Loop, comptime opts: struct { timers: bool }) usize {
         return self.active + @as(u1, if (self.submissions.empty()) 0 else 1) +
-            @as(u1, if (self.completions.empty()) 0 else 1);
+            @as(u1, if (self.completions.empty()) 0 else 1) +
+            if (comptime opts.timers) @as(u1, if (self.timers.root != null) 1 else 0) else 0;
     }
 
     /// Add a timer to the loop. The timer will execute in "next_ms". This

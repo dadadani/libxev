@@ -648,8 +648,10 @@ pub const Loop = struct {
         if (get_now()) |t| self.cached_now = t else |_| {}
     }
 
-    pub fn countPending(self: *Loop) usize {
-        return self.active;
+    pub fn countPending(self: *Loop, comptime opts: struct { timers: bool }) usize {
+        return self.active + @as(u1, if (self.submissions.empty()) 0 else 1) +
+            @as(u1, if (self.asyncs.empty() and (if (comptime threaded) self.wakeup.load(.SeqCst) else self.wakeup)) 0 else 1) +
+            if (comptime opts.timers) @as(u1, if (self.timers.root != null) 1 else 0) else 0;
     }
 
     fn timer_next(next_ms: u64) wasi.timestamp_t {
