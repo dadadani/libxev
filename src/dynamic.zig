@@ -187,7 +187,7 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                     inline else => |tag| @field(
                         self.backend,
                         @tagName(tag),
-                    ).countPending(opts),
+                    ).countPending(.{ .timers = opts.timers }),
                 };
             }
 
