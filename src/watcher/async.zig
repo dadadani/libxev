@@ -108,7 +108,7 @@ fn AsyncEventFd(comptime xev: type) type {
                     },
                 },
                 .flags = comptime switch (xev.backend) {
-                    .io_uring => .{},
+                    .io_uring, .kqueue => .{},
                     .epoll => .{
                         .dup = true,
                     },
