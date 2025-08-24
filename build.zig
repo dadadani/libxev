@@ -153,8 +153,8 @@ fn buildBenchmarks(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
 ) ![]const *Step.Compile {
-    var steps = std.ArrayList(*Step.Compile).init(b.allocator);
-    defer steps.deinit();
+    var steps: std.ArrayListUnmanaged(*Step.Compile) = .empty;
+    defer steps.deinit(b.allocator);
 
     var dir = try std.fs.cwd().openDir(try b.build_root.join(
         b.allocator,
@@ -191,10 +191,10 @@ fn buildBenchmarks(
         exe.root_module.addImport("xev", b.modules.get("xev").?);
 
         // Store the mapping
-        try steps.append(exe);
+        try steps.append(b.allocator, exe);
     }
 
-    return try steps.toOwnedSlice();
+    return try steps.toOwnedSlice(b.allocator);
 }
 
 fn buildExamples(
@@ -203,8 +203,8 @@ fn buildExamples(
     optimize: std.builtin.OptimizeMode,
     c_lib_: ?*Step.Compile,
 ) ![]const *Step.Compile {
-    var steps = std.ArrayList(*Step.Compile).init(b.allocator);
-    defer steps.deinit();
+    var steps: std.ArrayListUnmanaged(*Step.Compile) = .empty;
+    defer steps.deinit(b.allocator);
 
     var dir = try std.fs.cwd().openDir(try b.build_root.join(
         b.allocator,
@@ -270,8 +270,8 @@ fn buildExamples(
         };
 
         // Store the mapping
-        try steps.append(exe);
+        try steps.append(b.allocator, exe);
     }
 
-    return try steps.toOwnedSlice();
+    return try steps.toOwnedSlice(b.allocator);
 }
