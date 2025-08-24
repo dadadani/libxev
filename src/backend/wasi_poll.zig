@@ -6,7 +6,11 @@ const posix = std.posix;
 const queue = @import("../queue.zig");
 const heap = @import("../heap.zig");
 const xev = @import("../main.zig").WasiPoll;
-
+const looppkg = @import("../loop.zig");
+const Callback = looppkg.Callback(@This());
+const CallbackAction = looppkg.CallbackAction;
+const CompletionState = looppkg.CompletionState;
+const noopCallback = looppkg.NoopCallback(@This());
 /// True if this backend is available on this platform.
 pub fn available() bool {
     return builtin.os.tag == .wasi;
@@ -51,7 +55,7 @@ pub const Loop = struct {
         stopped: bool = false,
     } = .{},
 
-    pub fn init(options: xev.Options) !Loop {
+    pub fn init(options: looppkg.Options) !Loop {
         _ = options;
         return .{ .cached_now = try get_now() };
     }
@@ -61,7 +65,7 @@ pub const Loop = struct {
     }
 
     /// Run the event loop. See RunMode documentation for details on modes.
-    pub fn run(self: *Loop, mode: xev.RunMode) !void {
+    pub fn run(self: *Loop, mode: looppkg.RunMode) !void {
         switch (mode) {
             .no_wait => try self.tick(0),
             .once => try self.tick(1),
@@ -103,10 +107,10 @@ pub const Loop = struct {
         userdata: ?*Userdata,
         comptime cb: *const fn (
             ud: ?*Userdata,
-            l: *xev.Loop,
-            c: *xev.Completion,
+            l: *Loop,
+            c: *Completion,
             r: CancelError!void,
-        ) xev.CallbackAction,
+        ) CallbackAction,
     ) void {
         c_cancel.* = .{
             .op = .{
@@ -118,10 +122,10 @@ pub const Loop = struct {
             .callback = (struct {
                 fn callback(
                     ud: ?*anyopaque,
-                    l_inner: *xev.Loop,
-                    c_inner: *xev.Completion,
-                    r: xev.Result,
-                ) xev.CallbackAction {
+                    l_inner: *Loop,
+                    c_inner: *Completion,
+                    r: Result,
+                ) CallbackAction {
                     return @call(.always_inline, cb, .{
                         @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(ud))),
                         l_inner,
@@ -572,7 +576,7 @@ pub const Loop = struct {
         c: *Completion,
         next_ms: u64,
         userdata: ?*anyopaque,
-        comptime cb: xev.Callback,
+        comptime cb: Callback,
     ) void {
         c.* = .{
             .op = .{
@@ -594,7 +598,7 @@ pub const Loop = struct {
         c_cancel: *Completion,
         next_ms: u64,
         userdata: ?*anyopaque,
-        comptime cb: xev.Callback,
+        comptime cb: Callback,
     ) void {
         switch (c.flags.state) {
             .dead, .deleting => {
@@ -685,7 +689,7 @@ pub const Completion = struct {
 
     /// Userdata and callback for when the completion is finished.
     userdata: ?*anyopaque = null,
-    callback: xev.Callback = xev.noopCallback,
+    callback: Callback = noopCallback,
 
     //---------------------------------------------------------------
     // Internal fields
@@ -734,7 +738,7 @@ pub const Completion = struct {
     ///
     /// Third, if you stop the loop (loop.stop()), the completions registered
     /// with the loop will NOT be reset to a dead state.
-    pub fn state(self: Completion) xev.CompletionState {
+    pub fn state(self: Completion) CompletionState {
         return switch (self.flags.state) {
             .dead => .dead,
             .adding, .deleting, .active => .active,
@@ -1306,14 +1310,14 @@ test "wasi: timer" {
 
     // Add the timer
     var called = false;
-    var c1: xev.Completion = undefined;
+    var c1: Completion = undefined;
     loop.timer(&c1, 1, &called, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             _ = r;
             const b = @as(*bool, @ptrCast(ud.?));
@@ -1324,14 +1328,14 @@ test "wasi: timer" {
 
     // Add another timer
     var called2 = false;
-    var c2: xev.Completion = undefined;
+    var c2: Completion = undefined;
     loop.timer(&c2, 100_000, &called2, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             _ = r;
             const b = @as(*bool, @ptrCast(ud.?));
@@ -1360,13 +1364,13 @@ test "wasi: timer reset" {
     var loop = try Loop.init(.{});
     defer loop.deinit();
 
-    const cb: xev.Callback = (struct {
+    const cb: Callback = (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const v = @as(*?TimerTrigger, @ptrCast(ud.?));
             v.* = r.timer catch unreachable;
@@ -1402,13 +1406,13 @@ test "wasi: timer reset before tick" {
     var loop = try Loop.init(.{});
     defer loop.deinit();
 
-    const cb: xev.Callback = (struct {
+    const cb: Callback = (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const v = @as(*?TimerTrigger, @ptrCast(ud.?));
             v.* = r.timer catch unreachable;
@@ -1440,13 +1444,13 @@ test "wasi: timer reset after trigger" {
     var loop = try Loop.init(.{});
     defer loop.deinit();
 
-    const cb: xev.Callback = (struct {
+    const cb: Callback = (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const v = @as(*?TimerTrigger, @ptrCast(ud.?));
             v.* = r.timer catch unreachable;
@@ -1486,14 +1490,14 @@ test "wasi: timer cancellation" {
 
     // Add the timer
     var trigger: ?TimerTrigger = null;
-    var c1: xev.Completion = undefined;
+    var c1: Completion = undefined;
     loop.timer(&c1, 100_000, &trigger, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const ptr = @as(*?TimerTrigger, @ptrCast(@alignCast(ud.?)));
             ptr.* = r.timer catch unreachable;
@@ -1507,7 +1511,7 @@ test "wasi: timer cancellation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: xev.Completion = .{
+    var c_cancel: Completion = .{
         .op = .{
             .cancel = .{
                 .c = &c1,
@@ -1518,10 +1522,10 @@ test "wasi: timer cancellation" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 _ = r.cancel catch unreachable;
@@ -1547,14 +1551,14 @@ test "wasi: canceling a completed operation" {
 
     // Add the timer
     var trigger: ?TimerTrigger = null;
-    var c1: xev.Completion = undefined;
+    var c1: Completion = undefined;
     loop.timer(&c1, 1, &trigger, (struct {
         fn callback(
             ud: ?*anyopaque,
-            l: *xev.Loop,
-            _: *xev.Completion,
-            r: xev.Result,
-        ) xev.CallbackAction {
+            l: *Loop,
+            _: *Completion,
+            r: Result,
+        ) CallbackAction {
             _ = l;
             const ptr = @as(*?TimerTrigger, @ptrCast(@alignCast(ud.?)));
             ptr.* = r.timer catch unreachable;
@@ -1568,14 +1572,14 @@ test "wasi: canceling a completed operation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: xev.Completion = .{};
+    var c_cancel: Completion = .{};
     loop.cancel(&c1, &c_cancel, bool, &called, (struct {
         fn callback(
             ud: ?*bool,
-            l: *xev.Loop,
-            c: *xev.Completion,
-            r: xev.CancelError!void,
-        ) xev.CallbackAction {
+            l: *Loop,
+            c: *Completion,
+            r: CancelError!void,
+        ) CallbackAction {
             _ = l;
             _ = c;
             testing.expectError(CancelError.Inactive, r) catch @panic("expected error");
@@ -1609,7 +1613,7 @@ test "wasi: file" {
     // Start a reader
     var read_buf: [128]u8 = undefined;
     var read_len: ?usize = null;
-    var c_read: xev.Completion = .{
+    var c_read: Completion = .{
         .op = .{
             .read = .{
                 .fd = f.handle,
@@ -1621,10 +1625,10 @@ test "wasi: file" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 const ptr = @as(*?usize, @ptrCast(@alignCast(ud.?)));
@@ -1645,7 +1649,7 @@ test "wasi: file" {
     // Start a writer
     const write_buf = "hello!";
     var write_len: ?usize = null;
-    var c_write: xev.Completion = .{
+    var c_write: Completion = .{
         .op = .{
             .write = .{
                 .fd = f.handle,
@@ -1657,10 +1661,10 @@ test "wasi: file" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = l;
                 _ = c;
                 const ptr = @as(*?usize, @ptrCast(@alignCast(ud.?)));
@@ -1675,7 +1679,7 @@ test "wasi: file" {
     try testing.expect(write_len.? == write_buf.len);
 
     // Close
-    var c_close: xev.Completion = .{
+    var c_close: Completion = .{
         .op = .{
             .close = .{
                 .fd = f.handle,
@@ -1686,10 +1690,10 @@ test "wasi: file" {
         .callback = (struct {
             fn callback(
                 ud: ?*anyopaque,
-                l: *xev.Loop,
-                c: *xev.Completion,
-                r: xev.Result,
-            ) xev.CallbackAction {
+                l: *Loop,
+                c: *Completion,
+                r: Result,
+            ) CallbackAction {
                 _ = ud;
                 _ = l;
                 _ = c;
