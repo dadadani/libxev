@@ -90,10 +90,6 @@ pub fn build(b: *std.Build) !void {
         );
     };
 
-    // Benchmarks and examples
-    const benchmarks = try buildBenchmarks(b, target);
-    const examples = try buildExamples(b, target, optimize, static_lib);
-
     // Test Executable
     const test_exe: *Step.Compile = test_exe: {
         const test_filter = b.option(
@@ -129,22 +125,28 @@ pub fn build(b: *std.Build) !void {
     b.getInstallStep().dependOn(&c_header.step);
     b.getInstallStep().dependOn(&pc.step);
     b.installArtifact(test_exe);
-    if (emit_bench) for (benchmarks) |exe| {
-        b.getInstallStep().dependOn(&b.addInstallArtifact(
-            exe,
-            .{ .dest_dir = .{ .override = .{
-                .custom = "bin/bench",
-            } } },
-        ).step);
-    };
-    if (emit_examples) for (examples) |exe| {
-        b.getInstallStep().dependOn(&b.addInstallArtifact(
-            exe,
-            .{ .dest_dir = .{ .override = .{
-                .custom = "bin/example",
-            } } },
-        ).step);
-    };
+    if (emit_bench) {
+        const benchmarks = try buildBenchmarks(b, target);
+        for (benchmarks) |exe| {
+            b.getInstallStep().dependOn(&b.addInstallArtifact(
+                exe,
+                .{ .dest_dir = .{ .override = .{
+                    .custom = "bin/bench",
+                } } },
+            ).step);
+        }
+    }
+    if (emit_examples) {
+        const examples = try buildExamples(b, target, optimize, static_lib);
+        for (examples) |exe| {
+            b.getInstallStep().dependOn(&b.addInstallArtifact(
+                exe,
+                .{ .dest_dir = .{ .override = .{
+                    .custom = "bin/example",
+                } } },
+            ).step);
+        }
+    }
 }
 
 fn buildBenchmarks(
