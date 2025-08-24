@@ -602,6 +602,8 @@ pub const Loop = struct {
                 // so we mark it as dead.
                 c.flags.state = .dead;
 
+                self.active -= 1;
+
                 const result = c.perform(&ev);
                 const action = c.callback(c.userdata, self, c, result);
                 switch (action) {
@@ -613,14 +615,13 @@ pub const Loop = struct {
                         events[changes].udata = 0;
                         changes += 1;
                         assert(changes <= events.len);
-
-                        self.active -= 1;
                     },
 
                     // We rearm by default with kqueue so we just have to make
                     // sure that the state is correct.
                     .rearm => {
                         c.flags.state = .active;
+                        self.active += 1;
                     },
                 }
             }
@@ -802,6 +803,7 @@ pub const Loop = struct {
 
             .cancel => action: {
                 // Queue the cancel
+                self.cancellations.push(c);
                 break :action .{ .cancel = {} };
             },
 
@@ -910,9 +912,7 @@ pub const Loop = struct {
         };
 
         switch (action) {
-            .kevent,
-            .timer,
-            => {
+            inline .kevent, .timer, .cancel => |_, a| {
                 // Increase our active count so we now wait for this. We
                 // assume it'll successfully queue. If it doesn't we handle
                 // that later (see submit)
@@ -921,16 +921,7 @@ pub const Loop = struct {
 
                 // We only return true if this is a kevent, since other
                 // actions can come in here.
-                return action == .kevent;
-            },
-
-            .cancel => {
-                // We are considered an active completion.
-                self.active += 1;
-                c.flags.state = .active;
-
-                self.cancellations.push(c);
-                return false;
+                return comptime a == .kevent;
             },
 
             .threadpool => {
@@ -2799,7 +2790,7 @@ test "kqueue: socket accept/cancel cancellation should decrease active count" {
     try loop.run(.no_wait);
     try testing.expectEqual(@as(usize, 1), loop.active);
 
-    var cancel_called = false;
+    var cancel_called: bool = false;
     var c_cancel: Completion = .{
         .op = .{
             .cancel = .{
@@ -2816,7 +2807,7 @@ test "kqueue: socket accept/cancel cancellation should decrease active count" {
                 r: Result,
             ) CallbackAction {
                 _ = r.cancel catch unreachable;
-                const ptr = @as(*?bool, @ptrCast(@alignCast(ud.?)));
+                const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
                 ptr.* = true;
                 return .disarm;
             }
