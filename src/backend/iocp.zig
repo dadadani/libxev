@@ -174,6 +174,21 @@ pub const Loop = struct {
                 }
             }).callback,
         };
+        switch (c.flags.state) {
+            .dead => {
+                switch (cb(
+                    @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
+                    self,
+                    c_cancel,
+                    CancelError.Inactive,
+                )) {
+                    .disarm => {},
+                    .rearm => self.add(c_cancel),
+                }
+                return;
+            },
+            else => {},
+        }
         self.add(c_cancel);
     }
 
@@ -613,7 +628,7 @@ pub const Loop = struct {
                 }
 
                 // Dynamically load the ConnectEx function.
-                const ConnectEx = windows.loadWinsockExtensionFunction(windows.exp.LPFN_CONNECTEX, as_socket, windows.ws2_32.WSAID_CONNECTEX) catch |err| switch (err) {
+                const ConnectEx = std.os.windows.loadWinsockExtensionFunction(windows.exp.LPFN_CONNECTEX, as_socket, windows.ws2_32.WSAID_CONNECTEX) catch |err| switch (err) {
                     error.OperationNotSupported => unreachable, // Something other than sockets has given.
                     error.FileDescriptorNotASocket => unreachable, // Must be preferred on a socket.
                     error.ShortRead => unreachable,
@@ -1919,30 +1934,22 @@ test "iocp: canceling a completed operation" {
 
     // Cancel the timer
     var called = false;
-    var c_cancel: Completion = .{
-        .op = .{
-            .cancel = .{
-                .c = &c1,
-            },
-        },
-
-        .userdata = &called,
-        .callback = (struct {
-            fn callback(
-                ud: ?*anyopaque,
-                l: *Loop,
-                c: *Completion,
-                r: Result,
-            ) CallbackAction {
-                _ = l;
-                _ = c;
-                _ = r.cancel catch unreachable;
-                const ptr: *bool = @ptrCast(@alignCast(ud.?));
-                ptr.* = true;
-                return .disarm;
-            }
-        }).callback,
-    };
+    var c_cancel: Completion = .{};
+    loop.cancel(&c1, &c_cancel, bool, &called, (struct {
+        fn callback(
+            ud: ?*bool,
+            l: *Loop,
+            c: *Completion,
+            r: CancelError!void,
+        ) CallbackAction {
+            _ = l;
+            _ = c;
+            testing.expectError(CancelError.Inactive, r) catch @panic("expected error");
+            const ptr = @as(*bool, @ptrCast(@alignCast(ud.?)));
+            ptr.* = true;
+            return .disarm;
+        }
+    }).callback);
     loop.add(&c_cancel);
 
     // Tick
