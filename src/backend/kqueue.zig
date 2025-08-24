@@ -2559,7 +2559,7 @@ test "kqueue: file IO on thread pool" {
     if (builtin.os.tag != .macos) return error.SkipZigTest;
     const testing = std.testing;
 
-    var tpool = ThreadPool.init(.{});
+    var tpool = ThreadPool.init(std.Thread.getCpuCount() catch 1);
     defer tpool.deinit();
     var loop = try Loop.init(.{ .thread_pool = &tpool });
     defer loop.deinit();
@@ -2811,7 +2811,8 @@ test "kqueue: socket accept/cancel cancellation should decrease active count" {
 
     try testing.expectEqual(@as(usize, 2), loop.active);
     try loop.run(.once);
-    try loop.run(.no_wait);
+    try testing.expectEqual(@as(usize, 1), loop.active);
+    try loop.run(.once);
     try testing.expect(cancel_called);
 
     // Both callbacks are called active count should be 0
