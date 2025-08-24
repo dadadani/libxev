@@ -2804,6 +2804,7 @@ test "kqueue: socket accept/cancel cancellation should decrease active count" {
 
     try testing.expectEqual(@as(usize, 2), loop.active);
     try loop.run(.once);
+    try loop.run(.no_wait);
     try testing.expect(cancel_called);
 
     // Both callbacks are called active count should be 0
