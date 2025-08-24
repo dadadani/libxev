@@ -201,6 +201,21 @@ pub const Loop = struct {
                 }
             }).callback,
         };
+        switch (c.flags.state) {
+            .deleting, .dead => {
+                switch (cb(
+                    @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
+                    self,
+                    c_cancel,
+                    CancelError.Inactive,
+                )) {
+                    .disarm => {},
+                    .rearm => self.add(c_cancel),
+                }
+                return;
+            },
+            else => {},
+        }
         self.add(c_cancel);
     }
 
