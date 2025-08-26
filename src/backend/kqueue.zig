@@ -4,7 +4,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 const posix = std.posix;
-const darwin = @import("../darwin.zig");
 const queue = @import("../queue.zig");
 const queue_mpsc = @import("../queue_mpsc.zig");
 const heap = @import("../heap.zig");
@@ -1086,7 +1085,7 @@ pub const Completion = struct {
                     .ident = @as(c_uint, v.port),
                     .filter = std.c.EVFILT.MACHPORT,
                     .flags = std.c.EV.ADD | std.c.EV.ENABLE,
-                    .fflags = darwin.MACH_RCV_MSG,
+                    .fflags = @bitCast(std.posix.system.MACH.RCV{}),
                     .data = 0,
                     .udata = @intFromPtr(self),
                     .ext = .{ @intFromPtr(slice.ptr), slice.len },
@@ -1456,7 +1455,7 @@ const Wakeup = if (builtin.os.tag.isDarwin()) struct {
             .ident = @as(usize, @intCast(self.mach_port.port)),
             .filter = std.c.EVFILT.MACHPORT,
             .flags = std.c.EV.ADD | std.c.EV.ENABLE,
-            .fflags = darwin.MACH_RCV_MSG,
+            .fflags = @bitCast(std.posix.system.MACH.RCV{}),
             .data = 0,
             .udata = 0,
             .ext = .{
@@ -1829,7 +1828,7 @@ fn kevent_syscall(
             std.math.cast(c_int, changelist.len) orelse return error.Overflow,
             eventlist.ptr,
             std.math.cast(c_int, eventlist.len) orelse return error.Overflow,
-            0,
+            std.c.KEVENT.FLAG.NONE,
             timeout,
         );
         switch (posix.errno(rc)) {
@@ -2588,12 +2587,12 @@ test "kqueue: mach port" {
     const mach_self = posix.system.mach_task_self();
     var mach_port: posix.system.mach_port_name_t = undefined;
     try testing.expectEqual(
-        darwin.KernE.SUCCESS,
-        darwin.getKernError(posix.system.mach_port_allocate(
+        std.posix.system.mach_msg_return_t.SUCCESS,
+        @as(std.posix.system.mach_msg_return_t, @enumFromInt(posix.system.mach_port_allocate(
             mach_self,
-            @intFromEnum(posix.system.MACH_PORT_RIGHT.RECEIVE),
+            posix.system.MACH.PORT.RIGHT.RECEIVE,
             &mach_port,
-        )),
+        ))),
     );
     defer _ = posix.system.mach_port_deallocate(mach_self, mach_port);
 
@@ -2631,25 +2630,26 @@ test "kqueue: mach port" {
     try testing.expect(!called);
 
     // Send a message to the port
-    var msg: darwin.mach_msg_header_t = .{
-        .msgh_bits = @intFromEnum(posix.system.MACH_MSG_TYPE.MAKE_SEND_ONCE),
-        .msgh_size = @sizeOf(darwin.mach_msg_header_t),
+    var msg: std.posix.system.mach_msg_header_t = .{
+        .msgh_bits = @intFromEnum(posix.system.MACH.MSG.TYPE.MAKE_SEND_ONCE),
+        .msgh_size = @sizeOf(std.posix.system.mach_msg_header_t),
         .msgh_remote_port = mach_port,
-        .msgh_local_port = darwin.MACH_PORT_NULL,
+        .msgh_local_port = std.posix.system.MACH.PORT.NULL,
         .msgh_voucher_port = undefined,
         .msgh_id = undefined,
     };
-    try testing.expectEqual(darwin.MachMsgE.SUCCESS, darwin.getMachMsgError(
-        darwin.mach_msg(
+    try testing.expectEqual(
+        std.posix.system.mach_msg_return_t.SUCCESS,
+        std.posix.system.mach_msg(
             &msg,
-            darwin.MACH_SEND_MSG,
+            @bitCast(std.posix.system.MACH.SEND{}),
             msg.msgh_size,
             0,
-            darwin.MACH_PORT_NULL,
-            darwin.MACH_MSG_TIMEOUT_NONE,
-            darwin.MACH_PORT_NULL,
+            std.posix.system.MACH.PORT.NULL,
+            std.posix.system.MACH.MSG.TIMEOUT_NONE,
+            std.posix.system.MACH.PORT.NULL,
         ),
-    ));
+    );
 
     // We should receive now!
     try loop.run(.until_done);

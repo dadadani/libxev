@@ -1,4 +1,4 @@
-{
+n{
   description = "libxev is a high performance, cross-platform event loop.";
 
   inputs = {
@@ -24,7 +24,7 @@
       # Other overlays
       (final: prev: rec {
         zigpkgs = inputs.zig.packages.${prev.system};
-        zig = inputs.zig.packages.${prev.system}."0.14.1";
+        zig = inputs.zig.packages.${prev.system}."master";
 
         # Latest versions
         wasmtime = inputs.nixpkgs-unstable.legacyPackages.${prev.system}.wasmtime;
