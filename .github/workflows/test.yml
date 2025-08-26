@@ -4,7 +4,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [namespace-profile-mitchellh-sm]
+        os: [ubuntu-latest]
 
         target: [
           aarch64-linux-gnu,
@@ -53,7 +53,7 @@ jobs:
   test-x86_64-linux:
     strategy:
       matrix:
-        os: [namespace-profile-mitchellh-sm]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       ZIG_LOCAL_CACHE_DIR: /zig/local-cache
@@ -91,14 +91,11 @@ jobs:
     - run: nix build
 
   test-x86_64-freebsd:
-    runs-on: namespace-profile-mitchellh-sm-systemd
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    # Required by Namespace
-    - run: sudo systemctl start ssh
-
+      
     - name: test
       uses: vmactions/freebsd-vm@v1
       with:
