@@ -158,7 +158,7 @@ pub const Loop = struct {
         c_cancel: *Completion,
         comptime Userdata: type,
         userdata: ?*Userdata,
-        comptime cb: *const fn (
+        comptime callback: ?*const fn (
             ud: ?*Userdata,
             l: *Loop,
             c: *Completion,
@@ -172,8 +172,8 @@ pub const Loop = struct {
                 },
             },
             .userdata = userdata,
-            .callback = (struct {
-                fn callback(
+            .callback = if (callback) |cb| (struct {
+                fn inner(
                     ud: ?*anyopaque,
                     l_inner: *Loop,
                     c_inner: *Completion,
@@ -186,10 +186,10 @@ pub const Loop = struct {
                         if (r.cancel) |_| {} else |err| err,
                     });
                 }
-            }).callback,
+            }).inner,
         };
         if (c.flags.state == .dead) {
-            switch (cb(
+            switch ((if (callback) |cb| cb else noopCallback)(
                 @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
                 self,
                 c_cancel,
