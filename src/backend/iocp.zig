@@ -178,15 +178,16 @@ pub const Loop = struct {
         };
         switch (c.flags.state) {
             .dead => {
-                switch ((if (callback) |cb| cb else noopCallback)(
-                    @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
-                    self,
-                    c_cancel,
-                    CancelError.Inactive,
-                )) {
-                    .disarm => {},
-                    .rearm => self.add(c_cancel),
-                }
+                if (callback) |cb|
+                    switch (cb(
+                        @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
+                        self,
+                        c_cancel,
+                        CancelError.Inactive,
+                    )) {
+                        .disarm => {},
+                        .rearm => self.add(c_cancel),
+                    };
                 return;
             },
             else => {},
