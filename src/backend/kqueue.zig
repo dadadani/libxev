@@ -346,12 +346,16 @@ pub const Loop = struct {
             }
 
             // We completed the cancellation.
-            if (c.callback == noopCallback) {
-                self.active -= 1;
+            self.active -= 1;
+            c.flags.state = .dead;
+            if (c.callback == noopCallback)
                 continue;
-            }
             c.result = .{ .cancel = cancel_result };
-            self.completions.push(c);
+            const action = c.callback(c.userdata, self, c, c.result.?);
+            switch (action) {
+                .disarm => {},
+                .rearm => self.add(c),
+            }
         }
     }
 

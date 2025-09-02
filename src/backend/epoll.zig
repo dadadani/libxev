@@ -524,6 +524,7 @@ pub const Loop = struct {
                 const fd = if (c.flags.dup) c.flags.dup_fd else c.fd();
                 const close_dup = c.flags.dup;
                 c.flags.state = .dead;
+                self.active -= 1;
 
                 const res = c.perform();
                 const action = c.callback(c.userdata, self, c, res);
@@ -543,13 +544,14 @@ pub const Loop = struct {
                                 posix.close(v);
                             }
                         }
-
-                        self.active -= 1;
                     },
 
                     // For epoll, epoll remains armed by default. We have to
                     // reset the state, that is all.
-                    .rearm => c.flags.state = .active,
+                    .rearm => {
+                        c.flags.state = .active;
+                        self.active += 1;
+                    },
                 }
             }
 
@@ -954,10 +956,7 @@ pub const Loop = struct {
                                 }
                             }
                         },
-                        .rearm => {
-                            self.active -= 1;
-                            self.start(completion);
-                        },
+                        .rearm => self.start(completion),
                     }
                 },
             }

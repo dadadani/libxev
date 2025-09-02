@@ -236,12 +236,16 @@ pub const Loop = struct {
             }
 
             // We completed the cancellation.
-            if (c.callback == noopCallback) {
-                self.active -= 1;
+            self.active -= 1;
+            c.flags.state = .dead;
+            if (c.callback == noopCallback)
                 continue;
-            }
             c.result = .{ .cancel = cancel_result };
-            self.completions.push(c);
+            const action = c.callback(c.userdata, self, c, c.result.?);
+            switch (action) {
+                .disarm => {},
+                .rearm => self.add(c),
+            }
         }
     }
 
@@ -327,6 +331,7 @@ pub const Loop = struct {
                 // later.
                 const c_active = c.flags.state == .active;
                 c.flags.state = .dead;
+                if (c_active) self.active -= 1;
 
                 // Decrease our waiters because we are definitely processing one.
                 wait_rem -|= 1;
@@ -334,13 +339,15 @@ pub const Loop = struct {
                 // Completion queue items MUST have a result set.
                 const action = c.callback(c.userdata, self, c, c.result.?);
                 switch (action) {
-                    .disarm => {
-                        // If we were active, decrement the number of active completions.
-                        if (c_active) self.active -= 1;
-                    },
+                    .disarm => {},
 
                     // Only resubmit if we aren't already active
-                    .rearm => if (!c_active) self.submissions.push(c),
+                    .rearm => if (!c_active)
+                        self.submissions.push(c)
+                    else {
+                        self.active += 1;
+                        c.flags.state = .active;
+                    },
                 }
             }
 
