@@ -215,13 +215,15 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                 c_cancel: *Completion,
                 comptime Userdata: type,
                 userdata: ?*Userdata,
-                comptime cb: *const fn (
+                comptime callback: ?*const fn (
                     ud: ?*Userdata,
                     l: *Loop,
                     c: *Completion,
                     r: CancelError!void,
                 ) CallbackAction,
             ) void {
+                if (callback == null and Userdata != void)
+                    @compileError("cannot provide userdata without a callback");
                 switch (backend) {
                     inline else => |tag| {
                         c.ensureTag(tag);
@@ -235,27 +237,30 @@ pub fn Xev(comptime bes: []const AllBackend) type {
                             &@field(c_cancel.value, @tagName(tag)),
                             Userdata,
                             userdata,
-                            (struct {
-                                fn callback(
-                                    ud_inner: ?*Userdata,
-                                    l_inner: *api.Loop,
-                                    c_inner: *api.Completion,
-                                    r: api.CancelError!void,
-                                ) CallbackAction {
-                                    return cb(
-                                        ud_inner,
-                                        @fieldParentPtr("backend", @as(
-                                            *Loop.Union,
-                                            @fieldParentPtr(@tagName(tag), l_inner),
-                                        )),
-                                        @fieldParentPtr("value", @as(
-                                            *Completion.Union,
-                                            @fieldParentPtr(@tagName(tag), c_inner),
-                                        )),
-                                        r,
-                                    );
-                                }
-                            }).callback,
+                            if (callback) |cb|
+                                (struct {
+                                    fn inner(
+                                        ud_inner: ?*Userdata,
+                                        l_inner: *api.Loop,
+                                        c_inner: *api.Completion,
+                                        r: api.CancelError!void,
+                                    ) CallbackAction {
+                                        return cb(
+                                            ud_inner,
+                                            @fieldParentPtr("backend", @as(
+                                                *Loop.Union,
+                                                @fieldParentPtr(@tagName(tag), l_inner),
+                                            )),
+                                            @fieldParentPtr("value", @as(
+                                                *Completion.Union,
+                                                @fieldParentPtr(@tagName(tag), c_inner),
+                                            )),
+                                            r,
+                                        );
+                                    }
+                                }).inner
+                            else
+                                null,
                         );
                     },
                 }
