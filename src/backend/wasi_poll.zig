@@ -105,13 +105,15 @@ pub const Loop = struct {
         c_cancel: *Completion,
         comptime Userdata: type,
         userdata: ?*Userdata,
-        comptime cb: *const fn (
+        comptime callback: ?*const fn (
             ud: ?*Userdata,
             l: *Loop,
             c: *Completion,
             r: CancelError!void,
         ) CallbackAction,
     ) void {
+        if (callback == null and Userdata != void)
+            @compileError("cannot provide userdata without a callback");
         c_cancel.* = .{
             .op = .{
                 .cancel = .{
@@ -119,8 +121,8 @@ pub const Loop = struct {
                 },
             },
             .userdata = userdata,
-            .callback = (struct {
-                fn callback(
+            .callback = if (callback) |cb| (struct {
+                fn inner(
                     ud: ?*anyopaque,
                     l_inner: *Loop,
                     c_inner: *Completion,
@@ -133,11 +135,11 @@ pub const Loop = struct {
                         if (r.cancel) |_| {} else |err| err,
                     });
                 }
-            }).callback,
+            }).inner else noopCallback,
         };
         switch (c.flags.state) {
             .dead, .deleting => {
-                switch (cb(
+                switch ((if (callback) |cb| cb else noopCallback)(
                     @as(?*Userdata, if (Userdata == void) null else @ptrCast(@alignCast(userdata))),
                     self,
                     c_cancel,
