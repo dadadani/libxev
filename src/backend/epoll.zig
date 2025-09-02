@@ -47,8 +47,8 @@ pub const Loop = struct {
     /// Our queue of submissions that we want to enqueue on the next tick.
     submissions: queue.Intrusive(Completion) = .{},
 
-    /// The queue for completions to delete from the epoll fd.
-    deletions: queue.Intrusive(Completion) = .{},
+    /// The queue for completions to cancel.
+    cancellations: queue.Intrusive(Completion) = .{},
 
     /// Heap of timers.
     timers: TimerHeap = .{ .context = {} },
@@ -136,12 +136,16 @@ pub const Loop = struct {
             // If it is dead we're good. If we're deleting we'll ignore it
             // while we're processing.
             .dead,
-            .deleting,
             => {},
 
             .active => unreachable,
         }
         completion.flags.state = .adding;
+
+        if (completion.op == .cancel) {
+            self.start(completion);
+            return;
+        }
 
         // We just add the completion to the queue. Failures can happen
         // at tick time...
@@ -199,19 +203,35 @@ pub const Loop = struct {
         self.add(c_cancel);
     }
 
-    /// Delete a completion from the loop.
-    pub fn delete(self: *Loop, completion: *Completion) void {
-        switch (completion.flags.state) {
-            // Already deleted
-            .deleting => return,
+    /// Process the cancellations queue. This doesn't call any callbacks but can potentially make
+    /// system call to cancel active IO.
+    fn process_cancellations(self: *Loop) void {
+        while (self.cancellations.pop()) |c| {
+            const target = c.op.cancel.c;
+            var cancel_result: CancelError!void = {};
+            switch (target.flags.state) {
+                // If the target is dead already we do nothing.
+                .dead => cancel_result = CancelError.Inactive,
 
-            // If we're active then we will stop it and remove from epoll.
-            // If we're adding then we'll ignore it when adding.
-            .dead, .active, .adding => {},
+                // If they are in the submission queue, mark them as dead
+                // so they will never be submitted.
+                .adding => target.flags.state = .dead,
+
+                // If it is active we need to schedule the deletion.
+                .active => self.stop_completion(target),
+            }
+
+            // We completed the cancellation.
+            self.active -= 1;
+            c.flags.state = .dead;
+            if (c.callback == noopCallback)
+                continue;
+            c.task_result = .{ .cancel = cancel_result };
+            switch (c.callback(c.userdata, self, c, c.task_result)) {
+                .disarm => {},
+                .rearm => self.start(c),
+            }
         }
-        completion.flags.state = .deleting;
-
-        self.deletions.push(completion);
     }
 
     /// Returns the "loop" time in milliseconds. The loop time is updated
@@ -281,7 +301,7 @@ pub const Loop = struct {
         comptime cb: Callback,
     ) void {
         switch (c.flags.state) {
-            .dead, .deleting => {
+            .dead => {
                 self.timer(c, next_ms, userdata, cb);
                 return;
             },
@@ -348,9 +368,14 @@ pub const Loop = struct {
             // We ignore any completions that aren't in the adding state.
             // This usually means that we switched them to be deleted or
             // something.
-            if (c.flags.state != .adding) continue;
-
-            self.start(c);
+            switch (c.flags.state) {
+                .adding => self.start(c),
+                .dead => self.stop_completion(c),
+                else => std.log.err(
+                    "invalid state in submission queue state={}",
+                    .{c.flags.state},
+                ),
+            }
         }
     }
 
@@ -392,15 +417,14 @@ pub const Loop = struct {
 
         var wait_rem: usize = @intCast(wait);
 
+        // Handle all of our cancellations first because we may be able to stop submissions from
+        // even happening if its still queued. Plus, cancellations sometimes add more to the
+        // submission queue.
+        self.process_cancellations();
+
         // Submit all the submissions. We copy the submission queue so that
         // any resubmits don't cause an infinite loop.
         try self.submit();
-
-        // Handle all deletions so we don't wait for them.
-        while (self.deletions.pop()) |c| {
-            if (c.flags.state != .deleting) continue;
-            self.stop_completion(c);
-        }
 
         // If we have no active handles then we return no matter what.
         if (self.active == 0) {
@@ -426,7 +450,7 @@ pub const Loop = struct {
                 assert(self.timers.deleteMin().? == t);
 
                 // Mark completion as done
-                const c = t.c;
+                const c: *Completion = @fieldParentPtr("op", @as(*Operation, @fieldParentPtr("timer", t)));
                 c.flags.state = .dead;
                 self.active -= 1;
 
@@ -582,20 +606,10 @@ pub const Loop = struct {
                 if (completion.flags.threadpool) {
                     break :res .{ .cancel = error.ThreadPoolUnsupported };
                 }
-
-                // We stop immediately. We only stop if we are in the
-                // "adding" state because cancellation or any other action
-                // means we're complete already.
-                if (completion.flags.state == .adding) {
-                    if (v.c.op == .cancel) @panic("cannot cancel a cancellation");
-                    switch (v.c.flags.state) {
-                        .dead, .deleting => break :res .{ .cancel = CancelError.Inactive },
-                        else => self.stop_completion(v.c),
-                    }
-                }
-
-                // We always run timers
-                break :res .{ .cancel = {} };
+                if (v.c.op == .cancel)
+                    @panic("cannot cancel a cancellation");
+                self.cancellations.push(completion);
+                break :res null;
             },
 
             .accept => res: {
@@ -810,10 +824,6 @@ pub const Loop = struct {
             },
 
             .timer => |*v| res: {
-                // Point back to completion since we need this. In the future
-                // we want to use @fieldParentPtr but https://github.com/ziglang/zig/issues/6611
-                v.c = completion;
-
                 // Insert the timer into our heap.
                 self.timers.insert(v);
 
@@ -874,45 +884,48 @@ pub const Loop = struct {
         // Delete. This should never fail.
         const maybe_fd = if (completion.flags.dup) completion.flags.dup_fd else completion.fd();
         if (maybe_fd) |fd| {
-            posix.epoll_ctl(
-                self.fd,
-                linux.EPOLL.CTL_DEL,
-                fd,
-                null,
-            ) catch unreachable;
+            if (completion.flags.state == .active) {
+                posix.epoll_ctl(
+                    self.fd,
+                    linux.EPOLL.CTL_DEL,
+                    fd,
+                    null,
+                ) catch unreachable;
+            }
         } else switch (completion.op) {
             .timer => |*v| {
-                const c = v.c;
+                const c = completion;
 
-                if (c.flags.state == .active) {
-                    // Timers needs to be removed from the timer heap.
-                    self.timers.remove(v);
-                }
+                if (c.flags.state == .active) {}
 
-                // If the timer was never fired, we need to fire it with
-                // the cancellation notice.
-                if (c.flags.state != .dead) {
-                    // If we have reset set AND we got a cancellation result,
-                    // that means that we were canceled so that we can update
-                    // our expiration time.
-                    if (v.reset) |r| {
-                        v.next = r;
-                        v.reset = null;
+                case: switch (c.flags.state) {
+                    .active => {
+                        // Timers needs to be removed from the timer heap.
                         self.active -= 1;
-                        self.start(c);
-                        return;
-                    }
-
-                    const action = c.callback(c.userdata, self, c, .{ .timer = .cancel });
-                    switch (action) {
-                        .disarm => {},
-                        .rearm => {
-                            self.active -= 1;
+                        self.timers.remove(v);
+                        continue :case .adding;
+                    },
+                    .adding => {
+                        if (v.reset) |r| {
+                            v.next = r;
+                            v.reset = null;
                             self.start(c);
                             return;
-                        },
-                    }
+                        }
+                    },
+                    .dead => {},
                 }
+
+                completion.flags.state = .dead;
+                const action = c.callback(c.userdata, self, c, .{ .timer = .cancel });
+                switch (action) {
+                    .disarm => {},
+                    .rearm => {
+                        self.start(c);
+                        return;
+                    },
+                }
+                return;
             },
 
             else => unreachable,
@@ -924,7 +937,8 @@ pub const Loop = struct {
 
             const close_dup = completion.flags.dup;
             switch (completion.op) {
-                .noop, .cancel, .timer => {},
+                .noop, .cancel => {},
+                .timer => unreachable,
                 inline else => |_, op| {
                     const action = completion.callback(
                         completion.userdata,
@@ -1004,9 +1018,6 @@ pub const Completion = struct {
         /// completion is in the submission queue
         adding = 1,
 
-        /// completion is in the deletion queue
-        deleting = 2,
-
         /// completion is registered with epoll
         active = 3,
     };
@@ -1031,7 +1042,7 @@ pub const Completion = struct {
     pub fn state(self: Completion) CompletionState {
         return switch (self.flags.state) {
             .dead => .dead,
-            .adding, .deleting, .active => .active,
+            .adding, .active => .active,
         };
     }
 
@@ -1334,11 +1345,6 @@ pub const Operation = union(OperationType) {
 
         /// Internal heap fields.
         heap: heap.IntrusiveField(Timer) = .{},
-
-        /// We point back to completion for now. When issue[1] is fixed,
-        /// we can juse use that from our heap fields.
-        /// [1]: https://github.com/ziglang/zig/issues/6611
-        c: *Completion = undefined,
 
         fn less(_: void, a: *const Timer, b: *const Timer) bool {
             return a.ns() < b.ns();
