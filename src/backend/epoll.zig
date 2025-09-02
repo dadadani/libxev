@@ -186,7 +186,7 @@ pub const Loop = struct {
                         if (r.cancel) |_| {} else |err| err,
                     });
                 }
-            }).inner,
+            }).inner else noopCallback,
         };
         if (c.flags.state == .dead) {
             switch ((if (callback) |cb| cb else noopCallback)(
