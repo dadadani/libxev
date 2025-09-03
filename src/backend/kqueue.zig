@@ -1044,6 +1044,7 @@ pub const Loop = struct {
                 // Wake up our main loop
                 c.task_loop.wakeup() catch {};
             },
+            else => {},
         }
     }
 
@@ -1592,12 +1593,11 @@ const Wakeup = if (builtin.os.tag.isDarwin()) struct {
     fn setup(self: *Self, kqueue_fd: posix.fd_t) !void {
         const events = [_]Kevent{.{
             .ident = @intCast(self.read_fd),
-            .filter = posix.system.EVFILT_READ,
+            .filter = posix.system.EVFILT.READ,
             .flags = posix.system.EV.ADD | posix.system.EV.ENABLE,
             .fflags = 0,
             .data = 0,
             .udata = 0,
-            .ext = .{ 0, 0 },
         }};
         const n = try kevent_syscall(
             kqueue_fd,
